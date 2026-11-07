@@ -6,167 +6,70 @@
 </p>
 
 <p align="center">
-  <a href="https://afendor.cc/download">
-    <img src="https://img.shields.io/badge/Download-afendor.cc-9FE803" alt="Download" /></a>
+  <a href="https://deskapp.afendor.cc/">
+    <img src="https://img.shields.io/badge/Download-deskapp.afendor.cc-9FE803" alt="Download Windows App" /></a>
+  <a href="https://web.afendor.cc">
+    <img src="https://img.shields.io/badge/Web%20App-web.afendor.cc-blue" alt="Web App" /></a>
   <a href="https://afendor.cc">
-    <img src="https://img.shields.io/badge/Website-afendor.cc-blue" alt="Website" /></a>
+    <img src="https://img.shields.io/badge/Website-afendor.cc-informational" alt="Website" /></a>
   <a href="./LICENSE">
     <img src="https://img.shields.io/badge/License-AGPLv3-purple" alt="AGPLv3 License" /></a>
 </p>
 
 # Afendor Chat
 
-Afendor Chat is a modern instant messaging and VoIP chat application built for friends, groups, and communities. Powered by `afendor.cc`.
+Afendor Chat is a modern instant messaging and VoIP chat application built for friends, groups, and communities. Connected to **afendor.cc**.
 
-<p align="center">
-  <img src="https://fluxer.app/static/img/screenshots-desktop-readme-1920w.9f7c8fdb2760d49b.png" alt="Fluxer running side by side on a desktop monitor and a phone" width="640">
-</p>
+---
 
-## Download
+## 💻 Download & Access
 
-| Windows | macOS | Linux | Android | iOS |
-| --- | --- | --- | --- | --- |
-| [Installer (x64)][win-setup-x64] | [Disk image][mac-dmg] | [Flatpak][flatpak-ref] | [Google Play (beta)][android-play] | [Beta paused][ios-beta-paused] |
-| [Installer (ARM64)][win-setup-arm64] | | [Flathub][flathub] | [APK (beta)][android-apk] | |
-| [Portable (x64)][win-portable-x64] | | [deb (x64)][linux-deb-x64] | [Obtainium (most phones)][obtainium-fcm] | |
-| [Portable (ARM64)][win-portable-arm64] | | [deb (ARM64)][linux-deb-arm64] | [Obtainium (degoogled phones)][obtainium-oss] | |
-| | | [rpm (x64)][linux-rpm-x64] | | |
-| | | [rpm (ARM64)][linux-rpm-arm64] | | |
-| | | [AppImage (x64)][linux-appimage-x64] | | |
-| | | [AppImage (ARM64)][linux-appimage-arm64] | | |
-| | | [tar.gz (x64)][linux-targz-x64] | | |
-| | | [tar.gz (ARM64)][linux-targz-arm64] | | |
+| Platform | Type | Link |
+| :--- | :--- | :--- |
+| **Windows (x64)** | Setup Installer | [Download Afendor-Chat-Setup.exe](https://deskapp.afendor.cc/) |
+| **Web Browser** | Instant Access | [Open web.afendor.cc](https://web.afendor.cc/) |
 
-The macOS disk image runs on both Apple silicon and Intel. Windows and Linux need the build matching your processor.
+---
 
-On Linux, prefer a repository over a single file so Fluxer updates with the rest of your system.
+## 🚀 Self-Hosted VPS Deployment
 
-## Linux package repositories
+To install and run the complete Afendor Chat production stack on your VPS, execute the guided installer:
 
-The package is `fluxer` for stable and `fluxer-canary` for canary. apt and dnf subscribe to one channel per entry file. pacman and Flatpak serve both from one repository.
-
-### Flatpak
-
-Fluxer's own Flatpak repository gets every update the day we release it. Open [the stable][flatpak-ref] or [the canary][flatpak-canary-ref] reference file and your software manager takes over. Some desktops also accept `flatpak+https://pkgs.fluxer.com/flatpak/fluxer.flatpakref` in the address bar.
-
-From a terminal:
-
-```sh
-flatpak install https://pkgs.fluxer.com/flatpak/fluxer.flatpakref
+```bash
+curl -fsSL https://deskapp.afendor.cc/install.sh | bash
 ```
 
-Stable is also on [Flathub][flathub], but Flathub can be a few weeks behind and has no canary:
+### Stack Management (`afendorctl`)
 
-```sh
-flatpak install flathub app.fluxer.Fluxer
+Once installed, manage the entire system using the bundled CLI:
+
+```bash
+# Check service status
+sudo afendorctl status
+
+# Run automated health checks
+sudo afendorctl health
+
+# View live service logs
+sudo afendorctl logs
+
+# Start / Restart all services
+sudo afendorctl start
+sudo afendorctl restart
 ```
 
-### Debian and Ubuntu
+---
 
-```sh
-sudo install -d -m 0755 /etc/apt/keyrings
-sudo curl -fsSL -o /etc/apt/keyrings/fluxer-archive-keyring.gpg https://pkgs.fluxer.com/keys/fluxer-archive-keyring.gpg
-sudo curl -fsSL -o /etc/apt/sources.list.d/fluxer.sources https://pkgs.fluxer.com/deb/fluxer.sources
-sudo apt update && sudo apt install fluxer
-```
+## ⚙️ Architecture & Features
 
-For canary, use the canary entry file and package.
+- **Realtime Gateway:** High-throughput WebSocket architecture for instant messaging, typing indicators, and presence.
+- **VoIP & Video:** WebRTC voice channels powered by LiveKit SFU.
+- **Storage Options:** Seamless integration with Cloudflare R2 / S3 (Mode B) or local storage (Mode A).
+- **Desktop Client:** Self-updating Windows desktop application powered by Velopack, hardcoded to official `afendor.cc` services.
 
-```sh
-sudo curl -fsSL -o /etc/apt/sources.list.d/fluxer-canary.sources https://pkgs.fluxer.com/deb/fluxer-canary.sources
-sudo apt update && sudo apt install fluxer-canary
-```
+---
 
-A `.deb` installed from a download only updates once its channel's entry is added.
+## 📜 License
 
-### Fedora and RHEL
-
-```sh
-sudo curl -fsSL -o /etc/yum.repos.d/fluxer.repo https://pkgs.fluxer.com/rpm/fluxer.repo
-sudo dnf install fluxer
-```
-
-For canary, use the canary entry file and package.
-
-```sh
-sudo curl -fsSL -o /etc/yum.repos.d/fluxer-canary.repo https://pkgs.fluxer.com/rpm/fluxer-canary.repo
-sudo dnf install fluxer-canary
-```
-
-RHEL, Rocky, Alma and CentOS Stream need `sudo dnf install epel-release` first, because their base repositories lack `libXScrnSaver`. Fedora does not.
-
-### Arch Linux
-
-The repository is signed, so pacman needs the key once:
-
-```sh
-sudo pacman-key --init
-curl -fsSL -o /tmp/fluxer-archive-keyring.asc https://pkgs.fluxer.com/keys/fluxer-archive-keyring.asc
-sudo pacman-key --add /tmp/fluxer-archive-keyring.asc
-sudo pacman-key --lsign-key 09D01339EE128925F75E675C855C5BDE34D205D2
-```
-
-`--lsign-key` is what makes pacman trust it. Then add the repository:
-
-```sh
-sudo tee -a /etc/pacman.conf >/dev/null <<'REPO'
-
-[fluxer]
-SigLevel = Required TrustedOnly
-Server = https://pkgs.fluxer.com/arch/$repo/os/$arch
-REPO
-sudo pacman -Syu fluxer
-```
-
-Write `$repo` and `$arch` literally. Both are pacman variables, not shell ones, hence the quoted heredoc.
-
-Full setup notes, including canary, are in the [Linux repositories documentation][docs-linux].
-
-## Other ways to run it
-
-- [Open Fluxer in a browser](https://fluxer.com/app), no install needed.
-- [Host your own instance][docs-selfhost] from this repository.
-
-## Documentation
-
-- [Documentation home][docs]
-- [Downloads][docs-downloads]
-- [Self-hosting][docs-selfhost]
-
-## License
-
-The source is licensed under the [AGPL-3.0-or-later](./LICENSE) license.
-
-Fluxer artwork, such as the logo, icons, badges and default avatars, is
-licensed under [CC BY-SA 4.0](./afendor_static/LICENSE). Third-party material
-keeps its own terms, listed in
-[afendor_static/THIRD_PARTY_LICENSES.md](./afendor_static/THIRD_PARTY_LICENSES.md).
-
-Use of the Fluxer name and logo is covered by the
-[name and marks policy](./.github/GOVERNANCE.md#name-and-marks).
-
-[win-setup-x64]: https://pkgs.fluxer.com/desktop/stable/win32/x64/latest/setup
-[win-setup-arm64]: https://pkgs.fluxer.com/desktop/stable/win32/arm64/latest/setup
-[win-portable-x64]: https://pkgs.fluxer.com/desktop/stable/win32/x64/latest/portable
-[win-portable-arm64]: https://pkgs.fluxer.com/desktop/stable/win32/arm64/latest/portable
-[mac-dmg]: https://pkgs.fluxer.com/desktop/stable/darwin/arm64/latest/dmg
-[linux-deb-x64]: https://pkgs.fluxer.com/desktop/stable/linux/x64/latest/deb
-[linux-deb-arm64]: https://pkgs.fluxer.com/desktop/stable/linux/arm64/latest/deb
-[linux-rpm-x64]: https://pkgs.fluxer.com/desktop/stable/linux/x64/latest/rpm
-[linux-rpm-arm64]: https://pkgs.fluxer.com/desktop/stable/linux/arm64/latest/rpm
-[linux-appimage-x64]: https://pkgs.fluxer.com/desktop/stable/linux/x64/latest/appimage
-[linux-appimage-arm64]: https://pkgs.fluxer.com/desktop/stable/linux/arm64/latest/appimage
-[linux-targz-x64]: https://pkgs.fluxer.com/desktop/stable/linux/x64/latest/tar_gz
-[linux-targz-arm64]: https://pkgs.fluxer.com/desktop/stable/linux/arm64/latest/tar_gz
-[flatpak-ref]: https://pkgs.fluxer.com/flatpak/fluxer.flatpakref
-[flatpak-canary-ref]: https://pkgs.fluxer.com/flatpak/fluxer-canary.flatpakref
-[flathub]: https://flathub.org/apps/app.fluxer.Fluxer
-[android-play]: https://play.google.com/store/apps/details?id=com.fluxer
-[android-apk]: https://fluxer.com/download/android
-[obtainium-fcm]: https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%7B%22id%22%3A%22com.fluxer%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Ffluxerapp%2Fflutter_client%22%2C%22author%22%3A%22fluxerapp%22%2C%22name%22%3A%22Fluxer%20Beta%20%28FCM%29%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22betafcm%5C%22%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%7D%22%7D
-[obtainium-oss]: https://apps.obtainium.imranr.dev/redirect?r=obtainium%3A%2F%2Fapp%2F%7B%22id%22%3A%22com.fluxer%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Ffluxerapp%2Fflutter_client%22%2C%22author%22%3A%22fluxerapp%22%2C%22name%22%3A%22Fluxer%20Beta%20%28OSS%29%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Atrue%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22betaoss%5C%22%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%7D%22%7D
-[ios-beta-paused]: https://fluxer.com/help/ios-testflight
-[docs]: https://docs.fluxer.com
-[docs-downloads]: https://docs.fluxer.com/downloads/overview/
-[docs-linux]: https://docs.fluxer.com/downloads/linux-repositories/
-[docs-selfhost]: https://docs.fluxer.com/operator/get-started/
+The source code is licensed under the [AGPL-3.0-or-later](./LICENSE) license.
+Afendor artwork, branding, icons, and logos are covered by their respective copyrights.

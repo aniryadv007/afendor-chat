@@ -219,7 +219,10 @@ services:
   # 4. AFENDOR APPLICATION CORE SERVICES
   # ----------------------------------------------------------------------------
   api:
-    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-api:${AFENDOR_VERSION:-latest}
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/aniryadv007}/afendor-api:${AFENDOR_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: afendor_api/Dockerfile
     container_name: afendor-api
     restart: unless-stopped
     networks:
@@ -246,7 +249,10 @@ services:
         max-file: "5"
 
   worker:
-    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-api:${AFENDOR_VERSION:-latest}
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/aniryadv007}/afendor-api:${AFENDOR_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: afendor_api/Dockerfile
     container_name: afendor-worker
     restart: unless-stopped
     networks:
@@ -267,7 +273,10 @@ services:
         max-file: "5"
 
   gateway:
-    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-gateway:${AFENDOR_VERSION:-latest}
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/aniryadv007}/afendor-gateway:${AFENDOR_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: afendor_gateway/Dockerfile
     container_name: afendor-gateway
     restart: unless-stopped
     networks:
@@ -284,7 +293,10 @@ services:
         max-file: "5"
 
   media-proxy:
-    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-media-proxy:${AFENDOR_VERSION:-latest}
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/aniryadv007}/afendor-media-proxy:${AFENDOR_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: afendor_media_proxy/Dockerfile
     container_name: afendor-media-proxy
     restart: unless-stopped
     networks:
@@ -300,7 +312,10 @@ services:
         max-file: "5"
 
   app-proxy:
-    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-app-proxy:${AFENDOR_VERSION:-latest}
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/aniryadv007}/afendor-app-proxy:${AFENDOR_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: afendor_app_proxy/Dockerfile
     container_name: afendor-app-proxy
     restart: unless-stopped
     networks:
@@ -317,7 +332,10 @@ services:
         max-file: "3"
 
   admin:
-    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-admin:${AFENDOR_VERSION:-latest}
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/aniryadv007}/afendor-admin:${AFENDOR_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: afendor_admin/Dockerfile
     container_name: afendor-admin
     restart: unless-stopped
     networks:
@@ -334,7 +352,10 @@ services:
         max-file: "3"
 
   push:
-    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-push:${AFENDOR_VERSION:-latest}
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/aniryadv007}/afendor-push:${AFENDOR_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: afendor_push/Dockerfile
     container_name: afendor-push
     restart: unless-stopped
     networks:
@@ -354,7 +375,10 @@ services:
   # 5. SUPPORTING MICROSERVICES
   # ----------------------------------------------------------------------------
   snowflakes:
-    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-snowflakes:${AFENDOR_VERSION:-latest}
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/aniryadv007}/afendor-snowflakes:${AFENDOR_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: afendor_snowflakes/Dockerfile
     container_name: afendor-snowflakes
     restart: unless-stopped
     networks:
@@ -368,7 +392,10 @@ services:
         max-file: "2"
 
   users:
-    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-users:${AFENDOR_VERSION:-latest}
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/aniryadv007}/afendor-users:${AFENDOR_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: afendor_users/Dockerfile
     container_name: afendor-users
     restart: unless-stopped
     networks:
@@ -385,7 +412,10 @@ services:
         max-file: "2"
 
   gifs:
-    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-gifs:${AFENDOR_VERSION:-latest}
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/aniryadv007}/afendor-gifs:${AFENDOR_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: afendor_gifs/Dockerfile
     container_name: afendor-gifs
     restart: unless-stopped
     networks:
@@ -402,7 +432,10 @@ services:
         max-file: "2"
 
   messages:
-    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-messages:${AFENDOR_VERSION:-latest}
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/aniryadv007}/afendor-messages:${AFENDOR_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: afendor_messages/Dockerfile
     container_name: afendor-messages
     restart: unless-stopped
     networks:
@@ -419,7 +452,10 @@ services:
         max-file: "2"
 
   unfurl:
-    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-unfurl:${AFENDOR_VERSION:-latest}
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/aniryadv007}/afendor-unfurl:${AFENDOR_VERSION:-latest}
+    build:
+      context: ../..
+      dockerfile: afendor_unfurl/Dockerfile
     container_name: afendor-unfurl
     restart: unless-stopped
     networks:
@@ -433,6 +469,7 @@ services:
       driver: "json-file"
       options:
         max-size: "5m"
+        max-file: "2"
         max-file: "2"
 
   # ----------------------------------------------------------------------------

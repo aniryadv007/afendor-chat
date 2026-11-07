@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # ==============================================================================
 # AFENDOR CHAT - PRODUCTION VPS GUIDED INSTALLER
-# Intended execution: curl -fsSL https://installer.afendor.cc/install.sh | bash
+# Intended execution: curl -fsSL https://deskapp.afendor.cc/install.sh | bash
 # Target OS: Ubuntu 22.04 LTS / 24.04 LTS (Authorized Google Cloud Platform VPS)
 # ==============================================================================
 
@@ -652,10 +652,15 @@ if docker compose ${COMPOSE_ARGS} pull; then
     log_success "Production containers pulled and ready."
     save_state_val "images_pulled" "true"
 else
-    log_warn "Failed to pull one or more container images from the public registry."
-    log_warn "If container images have not yet been published or pushed, image pulls may fail."
-    log_warn "Continuing installation; local images or automated build will be used if available."
-    save_state_val "images_pulled" "false"
+    log_warn "Failed to pull pre-built container images from registry."
+    log_info "Attempting to build application container images locally from source..."
+    if docker compose ${COMPOSE_ARGS} build; then
+        log_success "Local container image build completed successfully."
+        save_state_val "images_pulled" "true"
+    else
+        log_warn "Local build encountered warnings; continuing with available images."
+        save_state_val "images_pulled" "false"
+    fi
 fi
 
 # ------------------------------------------------------------------------------
