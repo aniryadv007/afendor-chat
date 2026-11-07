@@ -1,0 +1,8 @@
+services:
+  edge:
+    ports: !override
+      - "${AFENDOR_EDGE_BIND:-127.0.0.1:80}:80"
+    environment:
+      AFENDOR_EDGE_SITE_ADDRESS: ":80"
+      AFENDOR_EDGE_TLS_DIRECTIVE: ""
+      AFENDOR_EDGE_TRUSTED_PROXIES: ${AFENDOR_EDGE_TRUSTED_PROXIES:-private_ranges}

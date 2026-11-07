@@ -1,0 +1,224 @@
+{
+	"$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+	"formatter": {
+		"enabled": true,
+		"formatWithErrors": false,
+		"indentStyle": "tab",
+		"lineWidth": 120,
+		"lineEnding": "lf",
+		"bracketSpacing": false,
+		"includes": ["**", "!**/afendor_app/src/features/theme/variables/ThemeVariableManifest.ts"]
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "single",
+			"jsxQuoteStyle": "double",
+			"quoteProperties": "asNeeded",
+			"trailingCommas": "all",
+			"semicolons": "always",
+			"arrowParentheses": "always",
+			"bracketSpacing": false,
+			"bracketSameLine": false
+		},
+		"globals": ["React", "__webpack_base_uri__"]
+	},
+	"json": {
+		"formatter": {
+			"enabled": true,
+			"indentStyle": "tab",
+			"lineWidth": 120
+		},
+		"parser": {
+			"allowComments": true,
+			"allowTrailingCommas": true
+		}
+	},
+	"css": {
+		"formatter": {
+			"enabled": true,
+			"indentStyle": "tab",
+			"lineWidth": 120,
+			"quoteStyle": "single"
+		},
+		"parser": {
+			"cssModules": true,
+			"tailwindDirectives": true
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"complexity": {
+				"noForEach": "off",
+				"noImportantStyles": "off",
+				"noUselessCatch": "error",
+				"useLiteralKeys": "off"
+			},
+			"correctness": {
+				"noUndeclaredVariables": "error",
+				"noUnusedVariables": "error",
+				"noInvalidUseBeforeDeclaration": "off",
+				"useExhaustiveDependencies": "off"
+			},
+			"suspicious": {
+				"noArrayIndexKey": "off",
+				"noAssignInExpressions": "off",
+				"noExplicitAny": "off",
+				"noThenProperty": "off",
+				"noDoubleEquals": {
+					"level": "error",
+					"options": {
+						"ignoreNull": true
+					}
+				},
+				"noVar": "error",
+				"useAdjacentOverloadSignatures": "off",
+				"useIterableCallbackReturn": "off"
+			},
+			"style": {
+				"useConsistentArrayType": {
+					"level": "error",
+					"options": {
+						"syntax": "generic"
+					}
+				},
+				"useConst": "error",
+				"noDescendingSpecificity": "off",
+				"noNonNullAssertion": "off",
+				"noParameterAssign": "off",
+				"noRestrictedImports": {
+					"level": "error",
+					"options": {
+						"paths": {
+							"@lingui/react": {
+								"importNames": ["I18nProvider"],
+								"message": "Use AppI18nProvider from @app/features/i18n/components/AppI18nProvider so <Trans> output stays safe under page translation."
+							}
+						}
+					}
+				}
+			},
+			"a11y": {
+				"preset": "recommended",
+				"useAriaPropsForRole": "error",
+				"useValidAriaRole": "error",
+				"useValidAriaValues": "error",
+				"useValidAriaProps": "error",
+				"useAltText": "error",
+				"useAnchorContent": "error",
+				"useButtonType": "error",
+				"useKeyWithClickEvents": "error",
+				"useKeyWithMouseEvents": "error",
+				"useSemanticElements": "off",
+				"noAriaUnsupportedElements": "error",
+				"noNoninteractiveElementToInteractiveRole": "error",
+				"noNoninteractiveTabindex": "error",
+				"noRedundantAlt": "error",
+				"noRedundantRoles": "error",
+				"noInteractiveElementToNoninteractiveRole": "error",
+				"noAutofocus": "warn",
+				"noAccessKey": "warn",
+				"useAriaActivedescendantWithTabindex": "error",
+				"noSvgWithoutTitle": "off"
+			},
+			"nursery": {
+				"useTailwindSortedClasses": "error"
+			}
+		}
+	},
+	"assist": {"actions": {"source": {"organizeImports": "on"}}},
+	"overrides": [
+		{
+			"includes": [
+				"packages/**",
+				"afendor_desktop/**",
+				"afendor_docs/**",
+				"afendor_api/**",
+				"afendor_app/**",
+				"!afendor_app/pkgs/livekit-client/**"
+			],
+			"linter": {"rules": {"style": {"noNestedTernary": "error"}}}
+		},
+		{
+			"includes": [
+				"packages/constants/**",
+				"packages/date_utils/**",
+				"packages/number_utils/**",
+				"packages/snowflake/**"
+			],
+			"linter": {
+				"rules": {
+					"complexity": {
+						"noExcessiveCognitiveComplexity": {"level": "error", "options": {"maxAllowedComplexity": 25}}
+					},
+					"suspicious": {"noEmptyBlockStatements": "error"}
+				}
+			}
+		},
+		{
+			"includes": ["afendor_app/src/**/*.tsx"],
+			"plugins": ["./tools/lint/no-adjacent-jsx-text.grit"]
+		},
+		{
+			"includes": ["afendor_app/src/features/i18n/components/AppI18nProvider.tsx"],
+			"linter": {"rules": {"style": {"noRestrictedImports": "off"}}}
+		},
+		{
+			"includes": ["afendor_app/src/**/*.worklet.js"],
+			"javascript": {"globals": ["AudioWorkletProcessor", "registerProcessor", "sampleRate", "currentTime"]}
+		},
+		{
+			"includes": ["afendor_app/src/features/app/config/WebAppHostedImages.json"],
+			"json": {"formatter": {"indentStyle": "space", "indentWidth": 2}}
+		},
+		{
+			"includes": ["**/*.astro"],
+			"linter": {"rules": {"correctness": {"noUnusedImports": "off", "noUnusedVariables": "off"}}},
+			"assist": {"actions": {"source": {"organizeImports": "off"}}}
+		}
+	],
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"includes": [
+			"**",
+			"!**/.git",
+			"!**/app.css",
+			"!**/build",
+			"afendor_app/scripts/build",
+			"!**/dist",
+			"!**/afendor_app/src/media/data/emojis.json",
+			"!**/afendor_app/src/features/i18n/locales/*/messages.js",
+			"!**/afendor_app/src/features/i18n/locales/*/messages.mjs",
+			"!**/afendor_app/src/env.d.ts",
+			"!**/*.generated.*",
+			"!**/*.pb.*",
+			"!**/*_pb.*",
+			"!**/node_modules",
+			"!packages/schema/src/gen",
+			"!**/tailwind.css",
+			"!**/*.html",
+			"!**/*.md",
+			"!**/*.yaml",
+			"!**/*.yml",
+			"!**/*.module.css.d.ts",
+			"!**/afendor_app/src/features/ui/components/SVGMasks.tsx",
+			"!afendor_static",
+			"!packages/fonts",
+			"!afendor_admin/static/htmx.min.js",
+			"!afendor_api/src/api/openapi/openapi.json",
+			"!afendor_admin/openapi-admin.json",
+			"!afendor_api/pkgs/email/src/email_i18n/weblate",
+			"!afendor_api/src/api/content_i18n/weblate",
+			"!packages/errors/src/i18n/weblate",
+			"!afendor_rexctl/internal/adminapi/configschema.json",
+			"!afendor_rexctl/internal/stack/imageset.json",
+			"!afendor_rexctl/internal/stack/files/profiles.json"
+		],
+		"ignoreUnknown": true
+	}
+}

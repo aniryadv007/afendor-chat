@@ -1,0 +1,22 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+.link {
+	cursor: pointer;
+	border: 0;
+	background: transparent;
+	padding: 0;
+	color: inherit;
+	font: inherit;
+	line-height: inherit;
+	font-weight: 700;
+	text-decoration-line: underline;
+	text-decoration-thickness: 2px;
+	text-decoration-color: color-mix(in oklab, currentColor 45%, transparent);
+	text-underline-offset: 4px;
+}
+
+@media (hover: hover) {
+	.link:hover {
+		text-decoration-color: currentColor;
+	}
+}

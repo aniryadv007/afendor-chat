@@ -1,0 +1,462 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# ==============================================================================
+# AFENDOR CHAT - PRODUCTION DOCKER COMPOSE CONFIGURATION
+# Designed for Private Single-Node VPS Deployment (Google Cloud Platform)
+# ==============================================================================
+
+name: afendor
+
+networks:
+  afendor-net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  postgres-data:
+    name: afendor_postgres_data
+  valkey-data:
+    name: afendor_valkey_data
+  nats-data:
+    name: afendor_nats_data
+  meilisearch-data:
+    name: afendor_meilisearch_data
+  seaweedfs-data:
+    name: afendor_seaweedfs_data
+  media-proxy-tmp:
+    name: afendor_media_proxy_tmp
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. DATABASE & CACHE INFRASTRUCTURE
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: afendor-postgres
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    environment:
+      POSTGRES_DB: ${AFENDOR_POSTGRES_DATABASE:-afendor}
+      POSTGRES_USER: ${AFENDOR_POSTGRES_USERNAME:-afendor}
+      POSTGRES_PASSWORD: ${AFENDOR_POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AFENDOR_POSTGRES_USERNAME:-afendor} -d ${AFENDOR_POSTGRES_DATABASE:-afendor}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: afendor-valkey
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    command: >
+      valkey-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy noeviction
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: afendor-nats
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    command: >
+      --jetstream
+      --store_dir=/data/jetstream
+      --name=afendor-nats
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    container_name: afendor-meilisearch
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    environment:
+      MEILI_MASTER_KEY: ${AFENDOR_SEARCH_API_KEY}
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_ENV: "production"
+    volumes:
+      - meilisearch-data:/meili_data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ----------------------------------------------------------------------------
+  # 2. INTERNAL STORAGE BACKEND (MODE A: BUNDLED SEAWEEDFS)
+  # Activated when using bundled storage; disabled when using Mode B (External S3)
+  # ----------------------------------------------------------------------------
+  seaweedfs:
+    image: chrislusf/seaweedfs:3.79
+    container_name: afendor-seaweedfs
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    command: >
+      server
+      -dir=/data
+      -s3
+      -s3.port=8333
+      -s3.allowEmptyFolder=true
+    volumes:
+      - seaweedfs-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8333/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  seaweedfs-init:
+    image: amazon/aws-cli:2.22.18
+    container_name: afendor-seaweedfs-init
+    restart: "no"
+    networks:
+      - afendor-net
+    depends_on:
+      seaweedfs:
+        condition: service_healthy
+    environment:
+      AWS_ACCESS_KEY_ID: ${AFENDOR_S3_ACCESS_KEY_ID:-afendor}
+      AWS_SECRET_ACCESS_KEY: ${AFENDOR_S3_SECRET_ACCESS_KEY:-afendor-secret}
+      AWS_EC2_METADATA_DISABLED: "true"
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "
+      export ENDPOINT=http://seaweedfs:8333
+      echo 'Initializing Afendor S3 buckets...'
+      for bucket in ${AFENDOR_S3_BUCKET_CDN:-afendor} ${AFENDOR_S3_BUCKET_UPLOADS:-afendor-uploads} ${AFENDOR_S3_BUCKET_REPORTS:-afendor-reports} ${AFENDOR_S3_BUCKET_HARVESTS:-afendor-harvests}; do
+        aws --endpoint-url=$$ENDPOINT s3 mb s3://$$bucket || true
+      done
+      echo 'Afendor S3 buckets ready.'
+      "
+
+  # ----------------------------------------------------------------------------
+  # 3. WEBRTC AUDIO / VIDEO RTC ENGINE (LIVEKIT)
+  # ----------------------------------------------------------------------------
+  livekit:
+    image: livekit/livekit-server:v1.8.2
+    container_name: afendor-livekit
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    ports:
+      # RTC TCP fallback and UDP media ports bound to host
+      - "127.0.0.1:7880:7880"
+      - "${AFENDOR_LIVEKIT_TCP_PORT:-7881}:7881"
+      - "${AFENDOR_LIVEKIT_UDP_PORT:-7882}:7882/udp"
+    environment:
+      LIVEKIT_CONFIG: >
+        port: 7880
+        rtc:
+          tcp_port: 7881
+          port_range_start: 7882
+          port_range_end: 7882
+          use_external_ip: true
+        keys:
+          ${AFENDOR_LIVEKIT_API_KEY}: ${AFENDOR_LIVEKIT_API_SECRET}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:7880/ >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ----------------------------------------------------------------------------
+  # 4. AFENDOR APPLICATION CORE SERVICES
+  # ----------------------------------------------------------------------------
+  api:
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-api:${AFENDOR_VERSION:-latest}
+    container_name: afendor-api
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    env_file:
+      - ../../config/env/production.env
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/_health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  worker:
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-api:${AFENDOR_VERSION:-latest}
+    container_name: afendor-worker
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - ../../config/env/production.env
+    environment:
+      AFENDOR_API_WORKER_MODE: all_lanes
+      AFENDOR_API_WORKER_ENABLE_CRON_SCHEDULER: "true"
+    command: ["node", "dist/api/worker/WorkerMain.js"]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  gateway:
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-gateway:${AFENDOR_VERSION:-latest}
+    container_name: afendor-gateway
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    depends_on:
+      nats:
+        condition: service_healthy
+    env_file:
+      - ../../config/env/production.env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  media-proxy:
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-media-proxy:${AFENDOR_VERSION:-latest}
+    container_name: afendor-media-proxy
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    env_file:
+      - ../../config/env/production.env
+    volumes:
+      - media-proxy-tmp:/tmp
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  app-proxy:
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-app-proxy:${AFENDOR_VERSION:-latest}
+    container_name: afendor-app-proxy
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - ../../config/env/production.env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "15m"
+        max-file: "3"
+
+  admin:
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-admin:${AFENDOR_VERSION:-latest}
+    container_name: afendor-admin
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - ../../config/env/production.env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  push:
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-push:${AFENDOR_VERSION:-latest}
+    container_name: afendor-push
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    depends_on:
+      nats:
+        condition: service_healthy
+    env_file:
+      - ../../config/env/production.env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ----------------------------------------------------------------------------
+  # 5. SUPPORTING MICROSERVICES
+  # ----------------------------------------------------------------------------
+  snowflakes:
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-snowflakes:${AFENDOR_VERSION:-latest}
+    container_name: afendor-snowflakes
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    env_file:
+      - ../../config/env/production.env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  users:
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-users:${AFENDOR_VERSION:-latest}
+    container_name: afendor-users
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    depends_on:
+      nats:
+        condition: service_healthy
+    env_file:
+      - ../../config/env/production.env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  gifs:
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-gifs:${AFENDOR_VERSION:-latest}
+    container_name: afendor-gifs
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    depends_on:
+      nats:
+        condition: service_healthy
+    env_file:
+      - ../../config/env/production.env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  messages:
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-messages:${AFENDOR_VERSION:-latest}
+    container_name: afendor-messages
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    depends_on:
+      nats:
+        condition: service_healthy
+    env_file:
+      - ../../config/env/production.env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  unfurl:
+    image: ${AFENDOR_IMAGE_REGISTRY:-ghcr.io/afendor}/afendor-unfurl:${AFENDOR_VERSION:-latest}
+    container_name: afendor-unfurl
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    depends_on:
+      nats:
+        condition: service_healthy
+    env_file:
+      - ../../config/env/production.env
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ----------------------------------------------------------------------------
+  # 6. INTERNAL EDGE DISPATCHER (PORT 8080)
+  # Behind existing Nginx, this listens on 127.0.0.1:8080 and handles internal routing.
+  # ----------------------------------------------------------------------------
+  edge:
+    image: caddy:2.9-alpine
+    container_name: afendor-edge
+    restart: unless-stopped
+    networks:
+      - afendor-net
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/_health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+

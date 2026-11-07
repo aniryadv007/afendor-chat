@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+.scrollerFlex {
+	min-height: 0;
+	flex: 1;
+}
+
+.contentContainer {
+	margin-inline-start: auto;
+	margin-inline-end: auto;
+	width: 100%;
+	max-width: 43.5rem;
+	padding-inline-start: 1rem;
+	padding-inline-end: 1rem;
+	padding-top: 1rem;
+	padding-bottom: calc(1rem + env(safe-area-inset-bottom, 1.25rem));
+}

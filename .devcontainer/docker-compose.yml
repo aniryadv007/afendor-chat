@@ -1,0 +1,375 @@
+﻿name: afendor-dev
+
+services:
+  workspace:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    command: sleep infinity
+    init: true
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      pnpm_config_store_dir: /home/vscode/.local/share/pnpm/store
+      AFENDOR_PUBLIC_PORT: "${AFENDOR_DEV_PROXY_PORT:-8088}"
+      AFENDOR_PUBLIC_URL: "http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}"
+      AFENDOR_API_ENDPOINT: "http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}/api"
+      AFENDOR_API_CLIENT_ENDPOINT: "http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}/api"
+      AFENDOR_APP_ENDPOINT: "http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}"
+      AFENDOR_GATEWAY_ENDPOINT: "ws://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}/gateway"
+      AFENDOR_MEDIA_ENDPOINT: "http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}/media"
+      AFENDOR_STATIC_CDN_ENDPOINT: "http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}"
+      AFENDOR_ADMIN_ENDPOINT: "http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}/admin"
+      AFENDOR_MEDIA_PROXY_PUBLIC_ENDPOINT: "http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}/media"
+      AFENDOR_S3_PUBLIC_ENDPOINT: "http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}"
+      AFENDOR_LIVEKIT_URL: "ws://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}/livekit"
+      AFENDOR_LIVEKIT_INTERNAL_URL: "http://livekit:7880"
+      AFENDOR_MEDIA_PROXY_UPLOAD_RELAY_ENDPOINT: "http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}/media"
+      AFENDOR_GATEWAY_MEDIA_PROXY_ENDPOINT: "http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}/media"
+      AFENDOR_GATEWAY_STATIC_CDN_ENDPOINT: "http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}"
+      AFENDOR_ADMIN_OAUTH_REDIRECT_URI: "http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}/admin/oauth2_callback"
+      AFENDOR_PASSKEY_ADDITIONAL_ALLOWED_ORIGINS: "http://localhost,http://localhost:${AFENDOR_DEV_PROXY_PORT:-8088}"
+    volumes:
+      - ..:/workspaces/afendor:cached
+      - type: volume
+        source: root-node-modules
+        target: /workspaces/afendor/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-node-modules
+        target: /workspaces/afendor/afendor_api/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-app-node-modules
+        target: /workspaces/afendor/afendor_app/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-desktop-node-modules
+        target: /workspaces/afendor/afendor_desktop/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: fluxer-admin-node-modules
+        target: /workspaces/afendor/afendor_admin/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-config-node-modules
+        target: /workspaces/afendor/packages/config/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-constants-node-modules
+        target: /workspaces/afendor/packages/constants/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-date-utils-node-modules
+        target: /workspaces/afendor/packages/date_utils/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-errors-node-modules
+        target: /workspaces/afendor/packages/errors/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-geo-utils-node-modules
+        target: /workspaces/afendor/packages/geo_utils/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-hono-node-modules
+        target: /workspaces/afendor/packages/hono/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-i18n-node-modules
+        target: /workspaces/afendor/packages/i18n/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-instance-bootstrap-node-modules
+        target: /workspaces/afendor/packages/instance_bootstrap/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-ip-utils-node-modules
+        target: /workspaces/afendor/packages/ip_utils/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-limits-node-modules
+        target: /workspaces/afendor/packages/limits/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-logger-node-modules
+        target: /workspaces/afendor/packages/logger/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-number-utils-node-modules
+        target: /workspaces/afendor/packages/number_utils/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-openapi-node-modules
+        target: /workspaces/afendor/packages/openapi/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-schema-node-modules
+        target: /workspaces/afendor/packages/schema/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-snowflake-node-modules
+        target: /workspaces/afendor/packages/snowflake/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-cache-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/cache/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-captcha-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/captcha/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-cassandra-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/cassandra/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-elasticsearch-search-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/elasticsearch_search/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-email-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/email/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-geoip-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/geoip/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-http-client-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/http_client/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-kv-client-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/kv_client/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-media-proxy-utils-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/media_proxy_utils/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-mime-utils-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/mime_utils/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-nats-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/nats/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-rate-limit-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/rate_limit/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-virus-scan-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/virus_scan/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-worker-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/worker/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-app-list-utils-node-modules
+        target: /workspaces/afendor/afendor_app/pkgs/list_utils/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-app-livekit-client-node-modules
+        target: /workspaces/afendor/afendor_app/pkgs/livekit-client/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: package-voice-engine-v2-node-modules
+        target: /workspaces/afendor/packages/voice_engine_v2/node_modules
+        volume:
+          nocopy: true
+      - type: volume
+        source: afendor-api-postgres-node-modules
+        target: /workspaces/afendor/afendor_api/pkgs/postgres/node_modules
+        volume:
+          nocopy: true
+      - pnpm-store:/home/vscode/.local/share/pnpm/store
+      - cargo-registry:/home/vscode/.cargo/registry
+      - cargo-git:/home/vscode/.cargo/git
+      - rust-target:/workspaces/afendor/target
+      - type: bind
+        source: ${AFENDOR_DOCKER_SOCKET:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+    ports:
+      - "127.0.0.1:${AFENDOR_DEV_RSPACK_PORT:-3000}:3000"
+      - "127.0.0.1:${AFENDOR_DEV_PROXY_PORT:-8088}:8088"
+      - "127.0.0.1:${AFENDOR_DEV_API_PORT:-8080}:8080"
+      - "127.0.0.1:${AFENDOR_DEV_GATEWAY_PORT:-8771}:8771"
+      - "127.0.0.1:${AFENDOR_DEV_MEDIA_PROXY_PORT:-8082}:8082"
+      - "127.0.0.1:${AFENDOR_DEV_APP_PROXY_PORT:-8773}:8773"
+      - "127.0.0.1:${AFENDOR_DEV_ADMIN_PORT:-3020}:3020"
+      - "127.0.0.1:${AFENDOR_DEV_SEAWEEDFS_S3_PORT:-3900}:8333"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_started
+      nats:
+        condition: service_started
+      livekit:
+        condition: service_started
+      meilisearch:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: afendor
+      POSTGRES_USER: afendor
+      POSTGRES_PASSWORD: afendor
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${AFENDOR_DEV_POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fluxer -d fluxer"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  valkey:
+    image: valkey/valkey:9.1.2-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:${AFENDOR_DEV_VALKEY_PORT:-6379}:6379"
+
+  nats:
+    image: nats:2.14.8-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    volumes:
+      - nats-data:/data
+    ports:
+      - "127.0.0.1:${AFENDOR_DEV_NATS_PORT:-4222}:4222"
+      - "127.0.0.1:${AFENDOR_DEV_NATS_MONITOR_PORT:-8222}:8222"
+
+  livekit:
+    image: livekit/livekit-server:v1.12.0
+    command: ["--config", "/etc/livekit.yaml", "--bind", "0.0.0.0"]
+    environment:
+      LIVEKIT_RTC_TCP_PORT: "${AFENDOR_DEV_LIVEKIT_TCP_PORT:-7881}"
+      LIVEKIT_RTC_UDP_PORT_START: "${AFENDOR_DEV_LIVEKIT_UDP_PORT:-7882}"
+      LIVEKIT_RTC_UDP_PORT_END: "${AFENDOR_DEV_LIVEKIT_UDP_PORT:-7882}"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "127.0.0.1:${AFENDOR_DEV_LIVEKIT_PORT:-7880}:7880"
+      - "127.0.0.1:${AFENDOR_DEV_LIVEKIT_TCP_PORT:-7881}:${AFENDOR_DEV_LIVEKIT_TCP_PORT:-7881}"
+      - "127.0.0.1:${AFENDOR_DEV_LIVEKIT_UDP_PORT:-7882}:${AFENDOR_DEV_LIVEKIT_UDP_PORT:-7882}/udp"
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.53
+    environment:
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_UPGRADE_DB: "true"
+      MEILI_MASTER_KEY: afendor-dev-meilisearch
+    volumes:
+      - meilisearch-data:/meili_data
+    ports:
+      - "127.0.0.1:${AFENDOR_DEV_MEILISEARCH_PORT:-7700}:7700"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:7700/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  mailpit:
+    image: axllent/mailpit:v1.31
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: 5000
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      MP_WEBROOT: devmail
+    volumes:
+      - mailpit-data:/data
+
+volumes:
+  pnpm-store:
+  root-node-modules:
+  afendor-api-node-modules:
+  afendor-app-node-modules:
+  afendor-desktop-node-modules:
+  fluxer-admin-node-modules:
+  package-config-node-modules:
+  package-constants-node-modules:
+  package-date-utils-node-modules:
+  package-errors-node-modules:
+  package-geo-utils-node-modules:
+  package-hono-node-modules:
+  package-i18n-node-modules:
+  package-instance-bootstrap-node-modules:
+  package-ip-utils-node-modules:
+  package-limits-node-modules:
+  package-logger-node-modules:
+  package-number-utils-node-modules:
+  package-openapi-node-modules:
+  package-schema-node-modules:
+  package-snowflake-node-modules:
+  afendor-api-cache-node-modules:
+  afendor-api-captcha-node-modules:
+  afendor-api-cassandra-node-modules:
+  afendor-api-elasticsearch-search-node-modules:
+  afendor-api-email-node-modules:
+  afendor-api-geoip-node-modules:
+  afendor-api-http-client-node-modules:
+  afendor-api-kv-client-node-modules:
+  afendor-api-media-proxy-utils-node-modules:
+  afendor-api-mime-utils-node-modules:
+  afendor-api-nats-node-modules:
+  afendor-api-rate-limit-node-modules:
+  afendor-api-virus-scan-node-modules:
+  afendor-api-worker-node-modules:
+  afendor-app-list-utils-node-modules:
+  afendor-app-livekit-client-node-modules:
+  package-voice-engine-v2-node-modules:
+  afendor-api-postgres-node-modules:
+  cargo-registry:
+  cargo-git:
+  rust-target:
+  nats-data:
+  meilisearch-data:
+  mailpit-data:
+  postgres-data:

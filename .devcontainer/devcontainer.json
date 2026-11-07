@@ -1,0 +1,65 @@
+{
+	"name": "Afendor Chat",
+	"dockerComposeFile": "docker-compose.yml",
+	"service": "workspace",
+	"workspaceFolder": "/workspaces/afendor",
+	"shutdownAction": "stopCompose",
+	"remoteUser": "vscode",
+	"hostRequirements": {
+		"cpus": 4,
+		"memory": "8gb",
+		"storage": "32gb"
+	},
+	"remoteEnv": {
+		"DOCKER_HOST": "unix:///var/run/docker.sock"
+	},
+	"runServices": ["workspace", "postgres", "valkey", "nats", "livekit", "meilisearch", "mailpit"],
+	"forwardPorts": [3000, 8088, 8080, 8771, 8082, 8773, 3020, 8333],
+	"portsAttributes": {
+		"8088": {
+			"label": "Afendor Chat dev proxy",
+			"onAutoForward": "notify"
+		},
+		"3000": {
+			"label": "Rspack dev server"
+		},
+		"3020": {
+			"label": "Afendor Chat admin"
+		},
+		"8333": {
+			"label": "SeaweedFS S3"
+		},
+		"8773": {
+			"label": "Afendor Chat app proxy"
+		}
+	},
+	"postCreateCommand": "bash /workspaces/afendor/.devcontainer/fix-docker-socket.sh && bash /workspaces/afendor/.devcontainer/fix-workspace-permissions.sh && bash /workspaces/afendor/.devcontainer/direnv-allow.sh && cargo run -p afendor-dev -- bootstrap",
+	"postStartCommand": "bash /workspaces/afendor/.devcontainer/fix-docker-socket.sh && bash /workspaces/afendor/.devcontainer/fix-workspace-permissions.sh && bash /workspaces/afendor/.devcontainer/direnv-allow.sh && cargo run -p afendor-dev -- post-start",
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"editor.defaultFormatter": "biomejs.biome",
+				"erlang.includePaths": ["."],
+				"search.exclude": {
+					"**/_build/default/lib/afendor_gateway": true
+				},
+				"json.schemaDownload.trustedDomains": {
+					"http://json-schema.org/draft-07/schema#": true,
+					"https://unpkg.com/knip%406/schema.json": true,
+					"https://json.schemastore.org/tsconfig": true
+				}
+			},
+			"extensions": [
+				"biomejs.biome",
+				"rust-lang.rust-analyzer",
+				"tamasfe.even-better-toml",
+				"TypeScriptTeam.native-preview",
+				"unifiedjs.vscode-mdx",
+				"pgourlain.erlang",
+				"clinyong.vscode-css-modules",
+				"EditorConfig.EditorConfig",
+				"mkhl.direnv"
+			]
+		}
+	}
+}

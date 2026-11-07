@@ -1,0 +1,130 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import type {MeilisearchClient, MeilisearchTask} from '@app/api/search/meilisearch/MeilisearchClient';
+import {MeilisearchTaskError} from '@app/api/search/meilisearch/MeilisearchClient';
+import {MeilisearchMessageAdapter} from '@app/api/search/meilisearch/MeilisearchDomainAdapters';
+import {describe, expect, it} from 'vitest';
+
+interface RecordedMeilisearchRequest {
+	method: string;
+	path: string;
+	body: unknown;
+}
+
+class FakeMeilisearchClient implements MeilisearchClient {
+	readonly requests: Array<RecordedMeilisearchRequest> = [];
+	readonly waitedTaskUids: Array<number> = [];
+	readonly failedTasks = new Map<number, MeilisearchTaskError>();
+	private nextTaskUid = 1;
+	indexExists = false;
+
+	async request<TResponse>(method: string, path: string, body?: unknown): Promise<TResponse> {
+		this.requests.push({method, path, body});
+		if (method === 'GET' && path.startsWith('/indexes/')) {
+			if (!this.indexExists) {
+				throw new Error('404 index_not_found');
+			}
+			return {uid: path.slice('/indexes/'.length)} as TResponse;
+		}
+		if (method === 'POST' && path === '/indexes') {
+			this.indexExists = true;
+			return this.nextTask() as TResponse;
+		}
+		if ((method === 'PUT' || method === 'PATCH') && path.includes('/settings/')) {
+			return this.nextTask() as TResponse;
+		}
+		if (method === 'POST' && path.endsWith('/documents')) {
+			return this.nextTask() as TResponse;
+		}
+		if (method === 'POST' && path.endsWith('/documents/delete-batch')) {
+			return this.nextTask() as TResponse;
+		}
+		if (method === 'POST' && path.endsWith('/search')) {
+			return {
+				hits: [{id: 'message-1'}],
+				estimatedTotalHits: 1,
+			} as TResponse;
+		}
+		throw new Error(`Unhandled fake Meilisearch request: ${method} ${path}`);
+	}
+
+	async waitForTask(taskUid: number): Promise<void> {
+		this.waitedTaskUids.push(taskUid);
+		const failure = this.failedTasks.get(taskUid);
+		if (failure) {
+			throw failure;
+		}
+	}
+
+	clear(): void {
+		this.requests.length = 0;
+		this.waitedTaskUids.length = 0;
+	}
+
+	private nextTask(): MeilisearchTask {
+		return {
+			taskUid: this.nextTaskUid++,
+			status: 'enqueued',
+		};
+	}
+}
+
+describe('MeilisearchMessageAdapter', () => {
+	it('treats an index created concurrently by another process as created', async () => {
+		const client = new FakeMeilisearchClient();
+		client.failedTasks.set(1, new MeilisearchTaskError('Index `messages` already exists.', 'index_already_exists'));
+		const adapter = new MeilisearchMessageAdapter({client});
+
+		await adapter.initialize();
+
+		expect(adapter.isAvailable()).toBe(true);
+		expect(client.waitedTaskUids).toEqual([1, 2, 3, 4, 5]);
+	});
+
+	it('still fails when creating the index fails for another reason', async () => {
+		const client = new FakeMeilisearchClient();
+		client.failedTasks.set(1, new MeilisearchTaskError('Index uid is invalid.', 'invalid_index_uid'));
+		const adapter = new MeilisearchMessageAdapter({client});
+
+		await expect(adapter.initialize()).rejects.toThrow('Index uid is invalid.');
+		expect(adapter.isAvailable()).toBe(false);
+	});
+
+	it('builds Meilisearch search requests from message filters', async () => {
+		const client = new FakeMeilisearchClient();
+		client.indexExists = true;
+		const adapter = new MeilisearchMessageAdapter({client});
+		await adapter.initialize();
+		client.clear();
+
+		const result = await adapter.search(
+			'hello',
+			{
+				guildId: 'guild-1',
+				channelIds: ['channel-"quoted"', 'channel-2'],
+				mentions: ['user-1'],
+				sortBy: 'timestamp',
+				sortOrder: 'asc',
+			},
+			{limit: 10, offset: 20},
+		);
+
+		expect(result).toEqual({hits: [{id: 'message-1'}], total: 1});
+		expect(client.requests).toHaveLength(1);
+		expect(client.requests[0]).toEqual({
+			method: 'POST',
+			path: '/indexes/messages/search',
+			body: {
+				q: 'hello',
+				filter:
+					'(guildId = "guild-1") AND ((channelId = "channel-\\"quoted\\"" OR channelId = "channel-2")) AND (mentionedUserIds = "user-1")',
+				limit: 10,
+				offset: 20,
+				sort: ['createdAt:asc', 'id:asc'],
+				attributesToSearchOn: ['content', 'embedContent'],
+				showRankingScore: false,
+				matchingStrategy: 'all',
+			},
+		});
+	});
+});

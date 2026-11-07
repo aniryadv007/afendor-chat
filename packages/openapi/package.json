@@ -1,0 +1,27 @@
+{
+	"name": "@fluxer/openapi",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./*": "./*"
+	},
+	"scripts": {
+		"generate": "tsx src/scripts/GenerateSpec.ts",
+		"typecheck": "tsc --noEmit",
+		"validate": "tsx src/scripts/GenerateSpec.ts --validate-only"
+	},
+	"dependencies": {
+		"@fluxer/errors": "workspace:*",
+		"@fluxer/schema": "workspace:*",
+		"@redocly/openapi-core": "catalog:",
+		"ts-morph": "catalog:",
+		"zod": "catalog:"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "catalog:",
+		"@types/node": "catalog:",
+		"tsx": "catalog:",
+		"typescript": "catalog:ts7"
+	}
+}

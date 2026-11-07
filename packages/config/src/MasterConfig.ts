@@ -1,0 +1,382 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import type {DerivedEndpoints} from '@fluxer/config/src/EndpointDerivation';
+
+type RuntimeEnv = 'development' | 'production' | 'test';
+type DatabaseBackend = 'postgres' | 'cassandra';
+type PublicScheme = 'http' | 'https';
+export const CACHE_PURGE_ADAPTER_NAMES = ['none', 'http', 'controller'] as const;
+export type CachePurgeAdapterName = (typeof CACHE_PURGE_ADAPTER_NAMES)[number];
+export const STORE_PRODUCT_SLOT_NAMES = ['monthly', 'yearly', 'gift_1_month', 'gift_1_year'] as const;
+export type StoreProductSlotName = (typeof STORE_PRODUCT_SLOT_NAMES)[number];
+export const ACCOUNT_IDENTITY_MODE_NAMES = ['email', 'username'] as const;
+type AccountIdentityModeName = (typeof ACCOUNT_IDENTITY_MODE_NAMES)[number];
+export const TAG_STYLE_NAMES = ['none', 'random'] as const;
+type TagStyleName = (typeof TAG_STYLE_NAMES)[number];
+type SmtpTlsModeName = 'implicit' | 'starttls' | 'opportunistic' | 'none';
+
+export interface VoiceTurnServerConfig {
+	host: string;
+	port: number;
+	protocol: 'udp' | 'tcp' | 'tls';
+	username?: string;
+	credential?: string;
+	secret?: string;
+	ttl?: number;
+}
+
+interface SmtpConfig {
+	host: string;
+	port: number;
+	username: string;
+	password: string;
+	tls_mode?: SmtpTlsModeName;
+	secure?: boolean;
+}
+
+interface InstanceBrandingConfig {
+	product_name: string;
+	icon_url?: string;
+	symbol_url?: string;
+	logo_url?: string;
+	wordmark_url?: string;
+	favicon_url?: string;
+	favicon_dark_url?: string;
+	sign_in_backdrop_url?: string;
+	theme_color?: string;
+	status_page_url?: string;
+	status_page_incident_history_url?: string;
+}
+
+export interface MasterConfig {
+	env: RuntimeEnv;
+	domain: {
+		base_domain: string;
+		public_origin: string;
+		public_scheme: PublicScheme;
+		public_port: number;
+		static_cdn_domain: string;
+		invite_domain: string;
+		gift_domain: string;
+	};
+	endpoint_overrides?: Partial<DerivedEndpoints>;
+	endpoints: DerivedEndpoints;
+	internal: {
+		kv: string;
+		kv_mode: 'standalone' | 'cluster';
+		media_proxy: string;
+	};
+	database: {
+		backend: DatabaseBackend;
+		cassandra: {
+			hosts: Array<string>;
+			port: number;
+			keyspace: string;
+			local_dc: string;
+			username: string;
+			password: string;
+		};
+		postgres: {
+			url: string;
+			host: string;
+			port: number;
+			database: string;
+			username: string;
+			password: string;
+			ssl: boolean;
+			ssl_ca: string;
+			max_connections: number;
+			kv_table: string;
+			prepared_statements: boolean;
+		};
+	};
+	s3?: {
+		endpoint: string;
+		presigned_url_base?: string;
+		force_path_style: boolean;
+		region: string;
+		access_key_id: string;
+		secret_access_key: string;
+		buckets: {
+			cdn: string;
+			uploads: string;
+			reports: string;
+			harvests: string;
+		};
+	};
+	services: {
+		api: {
+			port: number;
+			headers_timeout_ms: number;
+			request_timeout_ms: number;
+			max_inflight_requests: number;
+			max_concurrent_form_uploads: number;
+			automated_message_deletion_delay_days: number;
+			ip_ban_exempt_ips: Array<string>;
+			donation_proxy_key: string;
+			trusted_callers: Array<{
+				name: string;
+				key: string;
+				buckets: Array<string>;
+			}>;
+			presigned_attachment_uploads_enabled: boolean;
+			presigned_harvest_downloads_enabled: boolean;
+			unfurl_ignored_hosts: Array<string>;
+			app_origin_aliases: Array<string>;
+			discovery_public_endpoint: string;
+			discovery_transport_endpoint: string;
+			worker?: {
+				mode?: 'all_lanes' | 'single_lane' | 'single_task';
+				lane?: 'realtime' | 'unfurl' | 'lifecycle' | 'batch' | 'crosspost';
+				task?: string;
+				enable_cron_scheduler?: boolean;
+				metrics_port?: number;
+				embedded?: boolean;
+				lane_concurrency_overrides?: {
+					realtime?: number;
+					unfurl?: number;
+					lifecycle?: number;
+					batch?: number;
+					crosspost?: number;
+				};
+			};
+			storage_change_feed?: {
+				enabled?: boolean;
+				stream?: string;
+				skip_buckets?: Array<string>;
+			};
+		};
+		nats?: {
+			core_url?: string;
+			jetstream_url?: string;
+			auth_token?: string;
+		};
+		media_proxy: {
+			secret_key: string;
+			upload_relay: {
+				endpoint: string;
+				secret_base64: string;
+				max_body_bytes: number;
+				token_ttl_secs: number;
+				keep_direct_countries: Array<string>;
+			};
+			attachment_urls: {
+				secrets_base64: Array<string>;
+			};
+		};
+		gateway: {
+			rpc_auth_token?: string;
+		};
+		admin: {
+			secret_key_base: string;
+			oauth_client_secret: string;
+			sso: {
+				issuer: string;
+				client_id: string;
+			};
+		};
+	};
+	auth: {
+		sudo_mode_secret: string;
+		connection_initiation_secret: string;
+		profile_pseudonym_secret: string;
+		sso_allow_private_addresses: boolean;
+		passkeys: {
+			rp_name: string;
+			rp_id: string;
+			additional_allowed_origins: Array<string>;
+		};
+		vapid: {
+			public_key: string;
+			private_key: string;
+			email: string;
+		};
+		bluesky: {
+			enabled: boolean;
+			client_name: string;
+			client_uri: string;
+			logo_uri: string;
+			tos_uri: string;
+			policy_uri: string;
+			keys: Array<{
+				kid: string;
+				private_key?: string;
+				private_key_path?: string;
+			}>;
+		};
+	};
+	integrations: {
+		email: {
+			enabled: boolean;
+			provider: 'smtp' | 'none';
+			delivery?: 'off' | 'smtp';
+			from_email: string;
+			from_name: string;
+			reply_to_email: string;
+			support_alert_email?: string;
+			app_base_url: string;
+			webhook_secret?: string;
+			smtp?: SmtpConfig;
+			fallback?: {
+				domains: Array<string>;
+				smtp: SmtpConfig & {headers?: Record<string, string>};
+			};
+		};
+		voice: {
+			enabled: boolean;
+			api_key: string;
+			api_secret: string;
+			url: string;
+			internal_url: string;
+			bundled?: boolean;
+			default_region?: {
+				id: string;
+				name: string;
+				emoji: string;
+				latitude: number;
+				longitude: number;
+			};
+			p2p_stun_urls?: Array<string>;
+			turn_servers?: Array<VoiceTurnServerConfig>;
+			join_allow_private_endpoints?: boolean;
+			health_interval_ms?: number;
+		};
+		search: {
+			engine: 'elasticsearch' | 'meilisearch' | 'none';
+			url: string;
+			api_key: string;
+			username: string;
+			password: string;
+			tls_reject_unauthorized: boolean;
+		};
+		stripe: {
+			enabled: boolean;
+			secret_key: string;
+			webhook_secret: string;
+			prices?: Record<string, string | undefined>;
+			legacy_prices?: Record<string, Array<string> | undefined>;
+		};
+		clamav: {
+			enabled: boolean;
+			host: string;
+			port: number;
+			fail_open: boolean;
+		};
+		klipy: {
+			api_key: string;
+		};
+		youtube: {
+			api_key: string;
+		};
+		cache_purge: {
+			adapter: CachePurgeAdapterName;
+			http: {
+				endpoint: string;
+				token: string;
+				timeout_ms: number;
+			};
+			controller: {
+				endpoint: string;
+				token: string;
+				timeout_ms: number;
+			};
+		};
+		blocklist_feeds: {
+			enabled?: boolean;
+		};
+		breached_password_check: {
+			enabled?: boolean;
+		};
+		app_store: {
+			enabled: boolean;
+			issuer_id?: string;
+			key_id?: string;
+			private_key?: string;
+			private_key_path?: string;
+			apps?: Array<{
+				bundle_id: string;
+				app_apple_id: number;
+			}>;
+			products?: Record<string, StoreProductSlotName>;
+		};
+		google_play: {
+			enabled: boolean;
+			packages?: Array<string>;
+			client_email?: string;
+			private_key?: string;
+			private_key_path?: string;
+			service_account_json_path?: string;
+			token_uri?: string;
+			products?: Record<string, StoreProductSlotName>;
+			push_audience?: string;
+			push_service_account_email?: string;
+			self_service_refunds: boolean;
+		};
+		store_billing: {
+			sandbox_user_ids?: Array<string>;
+			sandbox_entitles_all: boolean;
+			sandbox_subscriptions: boolean;
+		};
+	};
+	instance: {
+		self_hosted: boolean;
+		auto_join_invite_code?: string;
+		visionaries_guild_id?: string;
+		visionaries_guild_visionary_role_id?: string;
+		branding: InstanceBrandingConfig;
+		setup: {
+			configured: boolean;
+			token?: string;
+		};
+		account_identity: AccountIdentityModeName | null;
+		tag_style: TagStyleName | null;
+		age_policy: {
+			enabled?: boolean;
+			restricted_regions?: Array<string>;
+		};
+	};
+	payment_disputes: {
+		closure_effective_at?: string;
+	};
+	operator_pass: {
+		price_rises_at?: string;
+		grace_minutes: number;
+		now_override?: string;
+		labs_guild_id?: string;
+		labs_operator_role_id?: string;
+		labs_visionary_role_id?: string;
+		labs_access_role_id?: string;
+		labs_operators_channel_id?: string;
+		standard_prices_minor?: Partial<Record<string, number>>;
+		release_lists?: string;
+		withdrawal_countries?: string;
+		localized_prices_enabled?: Partial<Record<string, boolean>>;
+		wall_tiers?: string;
+		max_quantity?: number;
+	};
+	dev: {
+		relax_registration_rate_limits: boolean;
+		disable_rate_limits: boolean;
+		test_mode_enabled: boolean;
+		test_harness_token?: string;
+		validate_responses?: boolean;
+	};
+	geoip: {
+		maxmind_db_path: string;
+	};
+	proxy: {
+		trust_client_ip_header: boolean;
+		client_ip_header: string;
+	};
+	discovery: {
+		enabled: boolean;
+		min_member_count: number;
+	};
+	attachment_decay_enabled: boolean;
+	deletion_grace_period_hours: number;
+	inactivity_deletion_threshold_days?: number;
+	report_retention: {
+		days: number;
+		dry_run: boolean;
+	};
+}

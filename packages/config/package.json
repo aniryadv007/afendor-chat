@@ -1,0 +1,22 @@
+{
+	"name": "@fluxer/config",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		"./*": "./*"
+	},
+	"scripts": {
+		"self-host-env:check": "tsx scripts/CheckSelfHostEnv.ts",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"tsx": "catalog:",
+		"typescript": "catalog:ts7",
+		"vitest": "catalog:",
+		"yaml": "catalog:"
+	}
+}

@@ -1,0 +1,30 @@
+﻿[workspace]
+members = [
+	"afendor_admin",
+	"afendor_app_proxy",
+	"afendor_common",
+	"afendor_media_proxy",
+	"afendor_gifs",
+	"afendor_svc",
+	"afendor_messages",
+	"afendor_push",
+	"afendor_snowflakes",
+	"tools/ci",
+	"tools/dev",
+	"afendor_users",
+	"afendor_unfurl",
+	"packages/markdown_parser/rust",
+]
+exclude = [
+	"packages/markdown_parser/rust/fuzz",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "AGPL-3.0-or-later"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

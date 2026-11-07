@@ -1,0 +1,20 @@
+{{- include "fluxer.validate" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: afendor-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fluxer.labels" (dict "root" . "name" "afendor-config" "component" "config") | nindent 4 }}
+data:
+  {{- include "fluxer.configData" . | nindent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: afendor-app-proxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fluxer.labels" (dict "root" . "name" "afendor-app-proxy" "component" "config") | nindent 4 }}
+data:
+  {{- include "fluxer.appProxyConfigData" . | nindent 2 }}

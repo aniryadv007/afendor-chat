@@ -1,0 +1,777 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import type {AccountTier, AccountVerificationNeed} from '@fluxer/constants/src/AccountTierConstants';
+import {
+	DEFAULT_GUILD_FOLDER_ICON,
+	FriendSourceFlags,
+	FriendSourceFlagsDescriptions,
+	GroupDmAddPermissionFlags,
+	GroupDmAddPermissionFlagsDescriptions,
+	GuildFolderFlags,
+	GuildFolderFlagsDescriptions,
+	IncomingCallFlags,
+	IncomingCallFlagsDescriptions,
+	type MentionReplyPreference,
+	ProfileFieldPrivacyFlags,
+	ProfileFieldPrivacyFlagsDescriptions,
+	PublicUserFlags,
+	PublicUserFlagsDescriptions,
+} from '@fluxer/constants/src/UserConstants';
+import {AccountTierSchema, AccountVerificationNeedSchema} from '@fluxer/schema/src/domains/account/AccountTierSchemas';
+import {ConnectionResponse} from '@fluxer/schema/src/domains/connection/ConnectionSchemas';
+import {GuildMemberResponse} from '@fluxer/schema/src/domains/guild/GuildMemberSchemas';
+import {MessageResponseSchema} from '@fluxer/schema/src/domains/message/MessageResponseSchemas';
+import {ProfileBadgeListResponse} from '@fluxer/schema/src/domains/user/ProfileBadgeSchemas';
+import {LocaleSchema} from '@fluxer/schema/src/primitives/LocaleSchema';
+import {
+	createBitflagInt32Type,
+	createNamedStringLiteralUnion,
+	createStringType,
+	HexString32Type,
+	Int32Type,
+	SignedInt32Type,
+	SnowflakeStringType,
+	withFieldDescription,
+	withOpenApiType,
+} from '@fluxer/schema/src/primitives/SchemaPrimitives';
+import {
+	GuildFolderIconSchema,
+	MentionReplyPreferencesSchema,
+	ProfilePrivacyLevelSchema,
+	RelationshipTypesSchema,
+	RenderSpoilersSchema,
+	SensitiveMediaFilterLevelSchema,
+	SensitiveMediaGuildFilterLevelSchema,
+	StickerAnimationOptionsSchema,
+	TimeFormatTypesSchema,
+	UserAuthenticatorTypesSchema,
+	UserNotificationSettingsSchema,
+	UserPremiumTypesSchema,
+} from '@fluxer/schema/src/primitives/UserSettingsValidators';
+import {z} from 'zod';
+
+export const UserPartialResponse = z.object({
+	id: SnowflakeStringType.describe('The unique identifier (snowflake) for this user'),
+	username: z.string().describe('The username of the user, not unique across the platform'),
+	discriminator: z.string().describe('The four-digit discriminator tag of the user'),
+	global_name: z.string().nullable().describe('The display name of the user, if set'),
+	avatar: z.string().nullable().describe('The hash of the user avatar image'),
+	avatar_color: Int32Type.nullable().describe('The dominant avatar color of the user as an integer'),
+	bot: z.boolean().optional().describe('Whether the user is a bot account'),
+	system: z.boolean().optional().describe('Whether the user is an official system user'),
+	flags: createBitflagInt32Type(
+		PublicUserFlags,
+		PublicUserFlagsDescriptions,
+		'The public flags on the user account',
+		'PublicUserFlags',
+	),
+	mention_flags: withFieldDescription(MentionReplyPreferencesSchema, "The user's account-wide reply mention preference")
+		.optional()
+		.describe(
+			"The user's account-wide reply mention preference. Omitted when the user has no preference set (treated as NO_PREFERENCE).",
+		),
+});
+
+export type UserPartialResponse = z.infer<typeof UserPartialResponse>;
+
+export const UserPrivateResponse = UserPartialResponse.extend({
+	is_staff: z.boolean().describe('Whether the user has staff permissions'),
+	acls: z.array(z.string()).describe('Access control list entries for the user'),
+	traits: z.array(z.string()).describe('Special traits assigned to the user account'),
+	email: z.string().nullable().describe('The email address associated with the account'),
+	email_bounced: z
+		.boolean()
+		.optional()
+		.describe('Whether the current email address is marked as bounced by the mail provider'),
+	has_verified_phone: z.boolean().describe('Deprecated. Always false.'),
+	bio: z.string().nullable().describe('The user biography text'),
+	pronouns: z.string().nullable().describe('The preferred pronouns of the user'),
+	accent_color: Int32Type.nullable().describe('The user-selected accent color as an integer'),
+	timezone: z.string().nullable().optional().describe('The IANA timezone identifier saved by the user'),
+	timezone_privacy_flags: createBitflagInt32Type(
+		ProfileFieldPrivacyFlags,
+		ProfileFieldPrivacyFlagsDescriptions,
+		'Bitfield controlling who can see the profile timezone',
+		'ProfileFieldPrivacyFlags',
+	)
+		.optional()
+		.describe('Bitfield controlling who can see the profile timezone'),
+	banner: z.string().nullable().describe('The hash of the user profile banner image'),
+	banner_color: Int32Type.nullable().describe('The default banner color if no custom banner is set'),
+	mfa_enabled: z.boolean().describe('Whether multi-factor authentication is enabled'),
+	authenticator_types: z
+		.array(UserAuthenticatorTypesSchema)
+		.optional()
+		.describe('The types of authenticators configured for MFA'),
+	verified: z.boolean().describe('Whether the email address has been verified'),
+	account_limited: z.boolean().optional().describe('Whether the account is limited'),
+	premium_type: withFieldDescription(UserPremiumTypesSchema, 'The type of premium subscription').nullable(),
+	premium_since: z.string().nullable().describe('ISO8601 timestamp of when premium was first activated'),
+	premium_until: z
+		.string()
+		.nullable()
+		.describe('ISO8601 timestamp of when premium access ends, including stacked gift time'),
+	premium_will_cancel: z.boolean().describe('Whether premium is set to cancel at the end of the billing period'),
+	premium_billing_cycle: z.string().nullable().describe('The billing cycle for the premium subscription'),
+	premium_lifetime_sequence: Int32Type.nullable().describe('The sequence number for lifetime premium subscribers'),
+	premium_grace_ends_at: z
+		.string()
+		.nullable()
+		.describe(
+			'ISO8601 timestamp at which grace access ends after premium_until passes: after a failed renewal payment (7 days from the renewal for monthly plans, 14 for yearly), after a subscription ends (3 days), or during an App Store or Google Play grace period. Perks stay active and the original premium_since is kept on resubscribe until this timestamp passes. Null when no grace is recorded, in which case access lasts 3 days after premium_until.',
+		),
+	premium_discriminator: z
+		.boolean()
+		.describe(
+			'Whether the user selected a premium-only discriminator that will be rerolled when non-lifetime premium access ends',
+		),
+	hidden_profile_badges: z
+		.array(z.string())
+		.describe('Keys of the badges hidden from other people, as in the key field of a profile badge'),
+	premium_badge_hidden: z
+		.boolean()
+		.describe('Deprecated, use hidden_profile_badges. Whether the premium badge held is in that list'),
+	premium_badge_masked: z.boolean().describe('Whether the premium badge shows a masked appearance'),
+	premium_badge_timestamp_hidden: z.boolean().describe('Whether the premium start timestamp is hidden'),
+	premium_badge_sequence_hidden: z
+		.boolean()
+		.describe('Deprecated, use hidden_profile_badges. Whether visionary_number is in that list'),
+	premium_purchase_disabled: z.boolean().describe('Whether premium purchases are disabled for this account'),
+	premium_enabled_override: z.boolean().describe('Whether premium features are enabled via override'),
+	premium_perks_disabled: z.boolean().describe('Whether premium perks are temporarily disabled for this account'),
+	operator_pass_badge_hidden: z
+		.boolean()
+		.optional()
+		.describe(
+			'Deprecated, use hidden_profile_badges. Whether operator_pass is in that list. Only present on the current user response. Older servers omit it',
+		),
+	operator_pass_badge_timestamp_hidden: z
+		.boolean()
+		.optional()
+		.describe(
+			'Whether the month and year the Operator Pass was first held are hidden from other people. Only present on the current user response. Older servers omit it',
+		),
+	operator_pass_badge_count_hidden: z
+		.boolean()
+		.optional()
+		.describe(
+			"Whether the number of Operator Passes held is hidden from other people, on the badge and the Operators' wall. Only present on the current user response. Older servers omit it",
+		),
+	operator_pass_since: z
+		.string()
+		.nullable()
+		.optional()
+		.describe(
+			'ISO8601 timestamp of when the account got the Operator Pass, or null without one. Only present on the current user response.',
+		),
+	password_last_changed_at: z.string().nullable().describe('ISO8601 timestamp of the last password change'),
+	last_voice_activity_sharing_change_at: z
+		.string()
+		.nullable()
+		.describe(
+			'ISO8601 timestamp of the last bulk voice-activity-sharing change. Drives the 24-hour cooldown for re-toggling the Active Now sharing default.',
+		),
+	required_actions: z.array(z.string()).describe('Deprecated. Always empty.'),
+	nsfw_allowed: z.boolean().describe('Whether the user is allowed to view NSFW content'),
+	has_dismissed_premium_onboarding: z.boolean().describe('Whether the user has dismissed the premium onboarding flow'),
+	has_ever_purchased: z.boolean().describe('Whether the user has ever made a purchase'),
+	has_unread_gift_inventory: z.boolean().describe('Whether there are unread items in the gift inventory'),
+	unread_gift_inventory_count: Int32Type.describe('The number of unread gift inventory items'),
+	pending_bulk_message_deletion: z
+		.object({
+			scheduled_at: z.string().describe('ISO8601 timestamp of when the deletion was scheduled'),
+			channel_count: Int32Type.describe('The number of channels with messages to delete'),
+			message_count: Int32Type.describe('The total number of messages to delete'),
+		})
+		.nullable()
+		.describe(
+			'Information about a pending bulk message deletion request. Only populated when the legacy delayed-deletion flow is in progress; the new immediate-deletion flow does not surface a pending state here.',
+		),
+	age_verified_adult: z.boolean().optional().describe('Whether the user has verified their age as an adult'),
+	terms_agreed_at: z
+		.string()
+		.nullable()
+		.describe('ISO8601 timestamp of when the user last agreed to the terms of service'),
+	privacy_agreed_at: z
+		.string()
+		.nullable()
+		.describe(
+			'ISO8601 timestamp of when the user was last shown the current privacy policy. People are informed of it, they do not agree to it',
+		),
+	claimed: z
+		.boolean()
+		.optional()
+		.describe(
+			'Whether the account can be signed in to again from another device: an email on instances that sign in with an email, a password otherwise',
+		),
+	account_tier: AccountTierSchema.optional().describe(
+		'How far the account has got with setting up a way to sign in. Clients that do not get it derive it from claimed and verified',
+	),
+	verification_need: AccountVerificationNeedSchema.nullable()
+		.optional()
+		.describe('What the account still has to do before it can use everything, null once it is verified'),
+	has_password: z.boolean().optional().describe('Whether the account has a password'),
+	date_of_birth_required: z
+		.boolean()
+		.optional()
+		.describe('Whether the account still has to enter its date of birth, which clients ask for before anything else'),
+	profile_restricted: z
+		.boolean()
+		.optional()
+		.describe(
+			'Whether other people see only the username and tag of this account until it has a confirmed email address',
+		),
+});
+
+export type UserPrivateResponse = z.infer<typeof UserPrivateResponse>;
+
+export const UserUpdateResponse = UserPrivateResponse.extend({
+	token: z
+		.string()
+		.optional()
+		.describe('Authentication token for the replacement session, present when the password was changed'),
+	auth_session_id_hash: z
+		.string()
+		.optional()
+		.describe(
+			'Base64url-encoded hash of the replacement authentication session, present when the password was changed',
+		),
+});
+
+export type UserUpdateResponse = z.infer<typeof UserUpdateResponse>;
+
+export const EmailChangeStartResponse = z.object({
+	ticket: z.string().describe('Ticket returned for email change actions'),
+	require_original: z.boolean().describe('Whether verification of the original email is required'),
+	original_email: z.string().nullable().describe('The original email address on record'),
+	original_proof: z
+		.string()
+		.nullable()
+		.describe('Proof token generated when original email verification is not required'),
+	original_code_expires_at: z
+		.string()
+		.nullable()
+		.describe('ISO8601 timestamp when the original verification code expires'),
+	resend_available_at: z
+		.string()
+		.nullable()
+		.describe('ISO8601 timestamp when the original verification code can be resent'),
+});
+
+export type EmailChangeStartResponse = z.infer<typeof EmailChangeStartResponse>;
+
+export const EmailChangeVerifyOriginalResponse = z.object({
+	original_proof: z.string().describe('Proof token issued after verifying the original email'),
+});
+
+export type EmailChangeVerifyOriginalResponse = z.infer<typeof EmailChangeVerifyOriginalResponse>;
+
+export const EmailChangeRequestNewResponse = z.object({
+	ticket: z.string().describe('Ticket associated with the email change attempt'),
+	new_email: z.string().describe('The new email address the user wants to verify'),
+	new_code_expires_at: z.string().describe('ISO8601 timestamp when the new email code expires'),
+	resend_available_at: z.string().nullable().describe('ISO8601 timestamp when the new email code can be resent'),
+});
+
+export type EmailChangeRequestNewResponse = z.infer<typeof EmailChangeRequestNewResponse>;
+
+export const PasswordChangeStartResponse = z.object({
+	ticket: z.string().describe('Ticket for password change actions'),
+	code_expires_at: z.string().describe('ISO8601 timestamp when the verification code expires'),
+	resend_available_at: z.string().nullable().describe('ISO8601 timestamp when the code can be resent'),
+});
+
+export type PasswordChangeStartResponse = z.infer<typeof PasswordChangeStartResponse>;
+
+export const PasswordChangeVerifyResponse = z.object({
+	verification_proof: z.string().describe('Proof token issued after verifying the email code'),
+});
+
+export type PasswordChangeVerifyResponse = z.infer<typeof PasswordChangeVerifyResponse>;
+
+export const PasswordChangeCompleteResponse = z.object({
+	token: z.string().describe('Authentication token for the newly created session'),
+	auth_session_id_hash: z.string().describe('Base64url-encoded hash of the newly created authentication session'),
+});
+
+export type PasswordChangeCompleteResponse = z.infer<typeof PasswordChangeCompleteResponse>;
+
+export const UserPasswordUpdateResponse = z.object({
+	token: z.string().describe('Authentication token for the newly created session'),
+	auth_session_id_hash: z.string().describe('Base64url-encoded hash of the newly created authentication session'),
+});
+
+export type UserPasswordUpdateResponse = z.infer<typeof UserPasswordUpdateResponse>;
+
+export const UserAccountDeleteResponse = z.object({
+	pending_deletion_at: z.string().describe('ISO8601 timestamp of when the account is deleted'),
+});
+
+export type UserAccountDeleteResponse = z.infer<typeof UserAccountDeleteResponse>;
+
+export const RecoveryKitStatusResponse = z.object({
+	has_recovery_kit: z.boolean().describe('Whether the account has a recovery kit'),
+	created_at: z.iso.datetime().nullable().describe('ISO 8601 timestamp when the current recovery kit was created'),
+});
+
+export type RecoveryKitStatusResponse = z.infer<typeof RecoveryKitStatusResponse>;
+
+export const RecoveryKitCreateResponse = z.object({
+	recovery_key: z
+		.string()
+		.describe('New recovery key as 8 groups of 4 joined by dashes, shown only once. Any previous kit stops working'),
+	created_at: z.iso.datetime().describe('ISO 8601 timestamp when the recovery kit was created'),
+});
+
+export type RecoveryKitCreateResponse = z.infer<typeof RecoveryKitCreateResponse>;
+
+export interface UserProfileResponse {
+	bio: string | null;
+	pronouns: string | null;
+	banner: string | null;
+	banner_color?: number | null;
+	accent_color: number | null;
+}
+
+export const CustomStatusResponse = z.object({
+	text: z.string().nullish().describe('The custom status message text'),
+	expires_at: z.iso.datetime().nullish().describe('ISO8601 timestamp of when the custom status expires'),
+	emoji_id: SnowflakeStringType.nullish().describe('The ID of the custom emoji used in the status'),
+	emoji_name: z.string().nullish().describe('The name of the emoji used in the status'),
+	emoji_animated: z.boolean().describe('Whether the status emoji is animated'),
+});
+
+export type CustomStatusResponse = z.infer<typeof CustomStatusResponse>;
+
+export const UserSettingsResponse = z.object({
+	status: z.string().describe('The current online status of the user'),
+	status_resets_at: z.iso.datetime().nullish().describe('ISO8601 timestamp of when the status will reset'),
+	status_resets_to: z.string().nullish().describe('The status to reset to after the scheduled reset'),
+	theme: z.string().describe('The UI theme preference'),
+	locale: LocaleSchema,
+	restricted_guilds: z.array(SnowflakeStringType).describe('Guild IDs where direct messages are restricted'),
+	bot_restricted_guilds: z.array(SnowflakeStringType).describe('Guild IDs where bot direct messages are restricted'),
+	default_guilds_restricted: z.boolean().describe('Whether new guilds have DM restrictions by default'),
+	bot_default_guilds_restricted: z.boolean().describe('Whether new guilds have bot DM restrictions by default'),
+	inline_attachment_media: z.boolean().describe('Whether to display attachments inline in chat'),
+	inline_embed_media: z.boolean().describe('Whether to display embed media inline in chat'),
+	gif_auto_play: z.boolean().describe('Whether GIFs auto-play in chat'),
+	render_embeds: z.boolean().describe('Whether to render message embeds'),
+	render_reactions: z.boolean().describe('Whether to display reactions on messages'),
+	animate_emoji: z.boolean().describe('Whether to animate custom emoji'),
+	animate_stickers: withFieldDescription(StickerAnimationOptionsSchema, 'Sticker animation preference setting'),
+	render_spoilers: withFieldDescription(RenderSpoilersSchema, 'Spoiler rendering preference setting'),
+	message_display_compact: z.boolean().describe('Whether to use compact message display mode'),
+	friend_source_flags: createBitflagInt32Type(
+		FriendSourceFlags,
+		FriendSourceFlagsDescriptions,
+		'Bitfield for friend request source permissions',
+		'FriendSourceFlags',
+	),
+	incoming_call_flags: createBitflagInt32Type(
+		IncomingCallFlags,
+		IncomingCallFlagsDescriptions,
+		'Bitfield for incoming call notification settings',
+		'IncomingCallFlags',
+	),
+	group_dm_add_permission_flags: createBitflagInt32Type(
+		GroupDmAddPermissionFlags,
+		GroupDmAddPermissionFlagsDescriptions,
+		'Bitfield for group DM add permissions',
+		'GroupDmAddPermissionFlags',
+	),
+	guild_folders: z
+		.array(
+			z.object({
+				id: SignedInt32Type.nullish().describe('The unique identifier for the folder (-1 for uncategorized)'),
+				name: z.string().nullish().describe('The display name of the folder'),
+				color: Int32Type.nullish().describe('The color of the folder as an integer'),
+				flags: createBitflagInt32Type(
+					GuildFolderFlags,
+					GuildFolderFlagsDescriptions,
+					'Bitfield for guild folder display behaviour',
+					'GuildFolderFlags',
+				)
+					.default(0)
+					.describe('Bitfield for guild folder display behaviour'),
+				icon: GuildFolderIconSchema.default(DEFAULT_GUILD_FOLDER_ICON).describe('Selected icon for the guild folder'),
+				guild_ids: z.array(SnowflakeStringType).describe('The IDs of guilds contained in this folder'),
+			}),
+		)
+		.describe('The folder structure for organizing guilds in the sidebar'),
+	custom_status: CustomStatusResponse.nullable().describe('The custom status set by the user'),
+	afk_timeout: Int32Type.describe('The idle timeout in seconds before going AFK'),
+	time_format: withFieldDescription(TimeFormatTypesSchema, 'The preferred time format setting'),
+	developer_mode: z.boolean().describe('Whether developer mode is enabled'),
+	trusted_domains: z.array(z.string()).describe('List of trusted external link domains'),
+	default_hide_muted_channels: z.boolean().describe('Whether muted channels are hidden by default in new guilds'),
+	sensitive_content_friend_dm_filter: withFieldDescription(
+		SensitiveMediaFilterLevelSchema,
+		'Sensitive media filter level for DMs from friends',
+	),
+	sensitive_content_non_friend_dm_filter: withFieldDescription(
+		SensitiveMediaFilterLevelSchema,
+		'Sensitive media filter level for DMs from non-friends',
+	),
+	sensitive_content_guild_filter: withFieldDescription(
+		SensitiveMediaGuildFilterLevelSchema,
+		'Sensitive media filter level for community channels',
+	),
+	allow_mature_content_on_ios: z
+		.boolean()
+		.describe(
+			'Whether 18+ communities, channels and the "Show" sensitive media option are allowed in the iOS app. Only adults can turn this on. The iOS app never offers this setting.',
+		),
+	suppress_unprivileged_self_mentions: z
+		.boolean()
+		.describe('Whether direct mentions and reply mentions from unprivileged users are suppressed'),
+	suppress_unprivileged_self_mentions_bypass_user_ids: z
+		.array(SnowflakeStringType)
+		.describe('User IDs that bypass self-mention suppression'),
+	staff_dm_access_user_ids: z.array(SnowflakeStringType).describe('User IDs with Staff DM Access enabled'),
+	synced_preferences: z
+		.string()
+		.describe(
+			'Account-wide client preferences as a base64-encoded protobuf snapshot. Empty string when nothing has been synced yet.',
+		),
+	profile_privacy: withFieldDescription(
+		ProfilePrivacyLevelSchema,
+		'Controls who sees the full profile: all guild members, only small-guild members, or only friends',
+	),
+	default_share_voice_activity: z
+		.boolean()
+		.describe(
+			'Default value of share_voice_activity applied to newly accepted friend relationships. Read-only here; mutated via PUT /users/@me/settings/voice-activity-sharing.',
+		),
+	privacy_setup_version: z
+		.number()
+		.int()
+		.describe('Latest privacy setup version the user has reviewed, 0 if never reviewed'),
+	privacy_setup_completed_at: z.iso
+		.datetime()
+		.nullable()
+		.describe('When the user last completed the privacy setup, or null if never'),
+});
+
+export type UserSettingsResponse = z.infer<typeof UserSettingsResponse>;
+
+const UserGuildMuteConfig = z
+	.object({
+		end_time: z.string().nullable().describe('ISO8601 timestamp of when the mute expires'),
+		selected_time_window: Int32Type.describe('The selected mute duration in seconds'),
+	})
+	.nullable();
+const UserGuildChannelOverride = z.object({
+	collapsed: z.boolean().describe('Whether the channel category is collapsed in the sidebar'),
+	message_notifications: withFieldDescription(
+		UserNotificationSettingsSchema,
+		'The notification level override for this channel',
+	),
+	muted: z.boolean().describe('Whether notifications are muted for this channel'),
+	mute_config: UserGuildMuteConfig.describe('The mute configuration for this channel'),
+	unread_badges: withFieldDescription(UserNotificationSettingsSchema, 'Unread badges level override for this channel')
+		.nullish()
+		.describe('Unread badges level override for this channel (null = inherit)'),
+	flags: Int32Type.optional().describe(
+		'Channel override flags (NEW_FORUM_THREADS_OFF 1<<13, NEW_FORUM_THREADS_ON 1<<14)',
+	),
+});
+export const UserGuildSettingsResponse = z.object({
+	guild_id: SnowflakeStringType.nullable().describe('The ID of the guild these settings apply to'),
+	message_notifications: withFieldDescription(
+		UserNotificationSettingsSchema,
+		'The default notification level for the guild',
+	),
+	muted: z.boolean().describe('Whether the guild is muted'),
+	mute_config: UserGuildMuteConfig.describe('The mute configuration for the guild'),
+	mobile_push: z.boolean().describe('Whether mobile push notifications are enabled'),
+	suppress_everyone: z.boolean().describe('Whether @everyone mentions are suppressed'),
+	suppress_roles: z.boolean().describe('Whether role mentions are suppressed'),
+	hide_muted_channels: z.boolean().describe('Whether muted channels are hidden in the sidebar'),
+	channel_overrides: z
+		.record(SnowflakeStringType, UserGuildChannelOverride)
+		.nullable()
+		.describe('Per-channel notification overrides'),
+	unread_badges: withFieldDescription(UserNotificationSettingsSchema, 'Default unread badges level for the guild')
+		.nullish()
+		.describe('Default unread badges level for the guild (null = follows message_notifications)'),
+	version: Int32Type.describe('The version number of these settings for sync'),
+});
+
+export type UserGuildSettingsResponse = z.infer<typeof UserGuildSettingsResponse>;
+
+export const RelationshipResponse = z.object({
+	id: SnowflakeStringType.describe('The unique identifier for the relationship'),
+	type: withFieldDescription(RelationshipTypesSchema, 'The type of relationship (friend, blocked, pending, etc.)'),
+	user: z.lazy(() => UserPartialResponse).describe('The user involved in this relationship'),
+	since: z.iso.datetime().optional().describe('ISO8601 timestamp of when the relationship was established'),
+	nickname: z.string().nullable().describe('A custom nickname set for the related user'),
+	share_voice_activity: z
+		.boolean()
+		.describe(
+			'Whether the current user has chosen to share their voice activity with this friend on the Active Now panel',
+		),
+	friend_shares_voice_activity: z
+		.boolean()
+		.describe(
+			'Whether this friend has chosen to share their voice activity with the current user; for non-friend types this is always true',
+		),
+});
+
+export type RelationshipResponse = z.infer<typeof RelationshipResponse>;
+export interface BackupCode {
+	readonly code: string;
+	readonly consumed: boolean;
+}
+
+interface PendingBulkMessageDeletion {
+	readonly scheduled_at: string;
+	readonly channel_count: number;
+	readonly message_count: number;
+}
+
+export type UserProfile = Readonly<UserProfileResponse>;
+
+export interface UserPartial {
+	readonly id: string;
+	readonly username: string;
+	readonly discriminator: string;
+	readonly global_name: string | null;
+	readonly avatar: string | null;
+	readonly avatar_color: number | null;
+	readonly bot?: boolean;
+	readonly system?: boolean;
+	readonly flags: number;
+	readonly mention_flags?: MentionReplyPreference;
+}
+
+export interface UserPrivate extends UserPartial, UserProfile {
+	readonly is_staff: boolean;
+	readonly email: string | null;
+	readonly email_bounced?: boolean;
+	readonly mfa_enabled: boolean;
+	readonly has_verified_phone: boolean;
+	readonly authenticator_types: ReadonlyArray<number>;
+	readonly verified: boolean;
+	readonly account_limited?: boolean;
+	readonly premium_type: number | null;
+	readonly premium_since: string | null;
+	readonly premium_until: string | null;
+	readonly premium_will_cancel: boolean;
+	readonly premium_billing_cycle: string | null;
+	readonly premium_lifetime_sequence: number | null;
+	readonly premium_grace_ends_at: string | null;
+	readonly premium_discriminator: boolean;
+	readonly hidden_profile_badges?: ReadonlyArray<string>;
+	readonly premium_badge_hidden: boolean;
+	readonly premium_badge_masked: boolean;
+	readonly premium_badge_timestamp_hidden: boolean;
+	readonly premium_badge_sequence_hidden: boolean;
+	readonly premium_purchase_disabled: boolean;
+	readonly premium_enabled_override: boolean;
+	readonly premium_perks_disabled: boolean;
+	readonly operator_pass_badge_hidden?: boolean;
+	readonly operator_pass_badge_timestamp_hidden?: boolean;
+	readonly operator_pass_badge_count_hidden?: boolean;
+	readonly operator_pass_since?: string | null;
+	readonly timezone?: string | null;
+	readonly timezone_privacy_flags?: number;
+	readonly password_last_changed_at: string | null;
+	readonly last_voice_activity_sharing_change_at: string | null;
+	readonly required_actions: ReadonlyArray<string>;
+	readonly nsfw_allowed: boolean;
+	readonly pending_bulk_message_deletion: PendingBulkMessageDeletion | null;
+	readonly has_dismissed_premium_onboarding: boolean;
+	readonly has_ever_purchased: boolean;
+	readonly has_unread_gift_inventory: boolean;
+	readonly unread_gift_inventory_count: number;
+	readonly age_verified_adult?: boolean;
+	readonly terms_agreed_at?: string | null;
+	readonly privacy_agreed_at?: string | null;
+	readonly traits: ReadonlyArray<string>;
+	readonly claimed?: boolean;
+	readonly account_tier?: AccountTier;
+	readonly verification_need?: AccountVerificationNeed | null;
+	readonly has_password?: boolean;
+	readonly date_of_birth_required?: boolean;
+	readonly profile_restricted?: boolean;
+}
+
+export type User = UserPartial & Partial<UserPrivate>;
+
+export const SavedMessageStatusSchema = withOpenApiType(
+	createNamedStringLiteralUnion(
+		[
+			['available', 'Available', 'The saved message is available and can be retrieved'],
+			['missing_permissions', 'Missing Permissions', 'The user no longer has permission to view the message'],
+		],
+		'Availability status of a saved message',
+	),
+	'SavedMessageStatus',
+);
+
+export type SavedMessageStatus = z.infer<typeof SavedMessageStatusSchema>;
+
+export const SavedMessageEntryResponse = z.object({
+	id: SnowflakeStringType.describe('Unique identifier for the saved message entry'),
+	channel_id: SnowflakeStringType.describe('ID of the channel containing the message'),
+	message_id: SnowflakeStringType.describe('ID of the saved message'),
+	status: SavedMessageStatusSchema.describe('Availability status of the saved message'),
+	message: z
+		.lazy(() => MessageResponseSchema)
+		.nullable()
+		.describe('The message content if available'),
+});
+
+export type SavedMessageEntryResponse = z.infer<typeof SavedMessageEntryResponse>;
+
+export const SavedMessageEntryListResponse = z.array(SavedMessageEntryResponse);
+
+export type SavedMessageEntryListResponse = z.infer<typeof SavedMessageEntryListResponse>;
+
+export const EmailTokenResponse = z.object({
+	email_token: createStringType(1, 256).describe('The email change token to use for updating email'),
+});
+
+export type EmailTokenResponse = z.infer<typeof EmailTokenResponse>;
+
+export const UserTagCheckResponse = z.object({
+	taken: z.boolean().describe('Whether the username/discriminator combination is already taken'),
+});
+
+export type UserTagCheckResponse = z.infer<typeof UserTagCheckResponse>;
+
+const UserProfileDataResponse = z.object({
+	bio: z.string().nullable().describe('User biography text'),
+	pronouns: z.string().nullable().describe('User pronouns'),
+	banner: z.string().nullable().describe('Hash of the profile banner image'),
+	banner_color: Int32Type.nullable().optional().describe('Default banner color if no custom banner'),
+	accent_color: Int32Type.nullable().describe('User-selected accent color'),
+});
+
+const GuildMemberProfileDataResponse = z
+	.object({
+		bio: z.string().nullable().describe('Guild-specific biography text'),
+		pronouns: z.string().nullable().describe('Guild-specific pronouns'),
+		banner: z.string().nullable().describe('Hash of the guild-specific banner image'),
+		accent_color: Int32Type.nullable().describe('Guild-specific accent color'),
+	})
+	.nullable()
+	.optional();
+
+const MutualGuildResponse = z.object({
+	id: SnowflakeStringType.describe('The ID of the mutual guild'),
+	nick: z.string().nullable().describe('The nickname of the target user in this guild'),
+});
+
+export const UserProfileFullResponse = z.object({
+	user: UserPartialResponse.describe('The user object'),
+	user_profile: UserProfileDataResponse.describe('The user profile data'),
+	guild_member: z
+		.lazy(() => GuildMemberResponse)
+		.optional()
+		.describe('The guild member data if guild_id was provided'),
+	guild_member_profile: GuildMemberProfileDataResponse.describe('Guild-specific profile data'),
+	premium_type: withFieldDescription(
+		UserPremiumTypesSchema,
+		'The type of premium subscription. Deprecated for badge display, use profile_badges',
+	).optional(),
+	premium_since: z
+		.string()
+		.optional()
+		.describe('ISO8601 timestamp of when premium was activated. Deprecated for badge display, use profile_badges'),
+	premium_lifetime_sequence: Int32Type.optional().describe(
+		'Sequence number for lifetime premium. Deprecated for badge display, use profile_badges',
+	),
+	profile_badges: ProfileBadgeListResponse.optional().describe(
+		'Profile badges in display order. Empty when there is nothing to show. Older servers omit it',
+	),
+	operator_pass_since: z
+		.string()
+		.nullish()
+		.describe(
+			'ISO8601 timestamp of when the user got the Operator Pass, or null when absent or hidden. Older servers omit it',
+		),
+	hidden_profile_badge_count: z
+		.number()
+		.int()
+		.optional()
+		.describe('How many of the badges you hold are hidden from other people. Only present on your own profile'),
+	mutual_friends: z.array(UserPartialResponse).optional().describe('Array of mutual friends'),
+	mutual_guilds: z.array(MutualGuildResponse).optional().describe('Array of mutual guilds'),
+	connected_accounts: z.array(ConnectionResponse).optional().describe('Array of verified external connections'),
+	timezone_offset: SignedInt32Type.nullable().describe(
+		"Current timezone offset in minutes from UTC for the target user's profile timezone, or null when hidden or unset",
+	),
+	profile_limited: z
+		.boolean()
+		.optional()
+		.describe(
+			'True when the target user has restricted their profile and the viewer does not meet the visibility tier. Bio, pronouns, connected accounts, and the premium and Operator Pass badges have been stripped. Staff, partner, and bug hunter badges remain.',
+		),
+});
+
+export type UserProfileFullResponse = z.infer<typeof UserProfileFullResponse>;
+
+export const UserNotesRecordResponse = z
+	.record(SnowflakeStringType, z.string())
+	.describe('A map of user IDs to note text');
+
+export type UserNotesRecordResponse = z.infer<typeof UserNotesRecordResponse>;
+
+export const UserNoteResponse = z.object({
+	note: z.string().describe('The note text for this user'),
+});
+
+export type UserNoteResponse = z.infer<typeof UserNoteResponse>;
+
+export const RegisterMobileDeviceResponse = z.object({
+	device_id: HexString32Type.describe('The unique identifier for the registered device'),
+});
+
+export type RegisterMobileDeviceResponse = z.infer<typeof RegisterMobileDeviceResponse>;
+
+const MobileDeviceItemResponse = z.object({
+	device_id: HexString32Type.describe('The unique identifier for the device'),
+	platform: z.string().describe('The mobile push notification platform'),
+	app_id: z.string().nullable().describe('Client app channel or bundle mapping identifier for this device'),
+	provider_environment: z.string().nullable().describe('Push provider environment used for this device'),
+	user_agent: z.string().nullable().describe('The user agent that registered this device'),
+});
+
+export const MobileDevicesListResponse = z.object({
+	devices: z.array(MobileDeviceItemResponse).describe('Array of registered mobile push devices'),
+});
+
+export type MobileDevicesListResponse = z.infer<typeof MobileDevicesListResponse>;
+
+export const PreloadMessagesResponse = z
+	.record(SnowflakeStringType, z.lazy(() => MessageResponseSchema).nullable())
+	.describe('A map of channel IDs to the latest message in each channel');
+
+export type PreloadMessagesResponse = z.infer<typeof PreloadMessagesResponse>;
+
+export const PushSubscribeResponse = z.object({
+	subscription_id: z.string().describe('The unique identifier for the push subscription'),
+});
+
+export type PushSubscribeResponse = z.infer<typeof PushSubscribeResponse>;
+
+const PushSubscriptionItemResponse = z.object({
+	subscription_id: z.string().describe('The unique identifier for the push subscription'),
+	user_agent: z.string().nullable().describe('The user agent that created this subscription'),
+});
+
+export const PushSubscriptionsListResponse = z.object({
+	subscriptions: z.array(PushSubscriptionItemResponse).describe('Array of push notification subscriptions'),
+});
+
+export type PushSubscriptionsListResponse = z.infer<typeof PushSubscriptionsListResponse>;
+
+export const BulkIgnoreFriendRequestsResponse = z.object({
+	ignored_count: z.number().int(),
+});
+
+export type BulkIgnoreFriendRequestsResponse = z.infer<typeof BulkIgnoreFriendRequestsResponse>;
+
+export const RelationshipListResponse = z.array(RelationshipResponse);

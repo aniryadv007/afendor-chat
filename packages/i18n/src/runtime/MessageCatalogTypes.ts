@@ -1,0 +1,163 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import {parse, type Token} from '@messageformat/parser';
+
+type MessageVariableValue = string | number | boolean | Date;
+type Whitespace = ' ' | '\n' | '\r' | '\t';
+type TrimLeft<T extends string> = T extends `${Whitespace}${infer Rest}` ? TrimLeft<Rest> : T;
+type TrimRight<T extends string> = T extends `${infer Rest}${Whitespace}` ? TrimRight<Rest> : T;
+type Trim<T extends string> = TrimLeft<TrimRight<T>>;
+type PlaceholderHead<T extends string> = T extends `${infer Name},${string}` ? Trim<Name> : Trim<T>;
+type ValidPlaceholderName<T extends string> = T extends ''
+	? never
+	: T extends `#${string}`
+		? never
+		: T extends `${number}${string}`
+			? never
+			: T extends `${string}${Whitespace}${string}`
+				? never
+				: T extends `${string}{${string}`
+					? never
+					: T extends `${string}}${string}`
+						? never
+						: T;
+type PlaceholderName<T extends string> = ValidPlaceholderName<PlaceholderHead<T>>;
+type PlaceholderNameAfterOpen<T extends string> = T extends `${infer Placeholder}}${string}`
+	? PlaceholderName<Placeholder>
+	: never;
+type NumericPlaceholderNameAfterOpen<T extends string> = T extends `${infer Name}, plural,${string}`
+	? ValidPlaceholderName<Trim<Name>>
+	: T extends `${infer Name}, selectordinal,${string}`
+		? ValidPlaceholderName<Trim<Name>>
+		: never;
+type TemplatePlaceholderNames<T extends string, Found = never> = T extends `${string}{${infer AfterOpen}`
+	? TemplatePlaceholderNames<AfterOpen, Found | PlaceholderNameAfterOpen<AfterOpen>>
+	: Found;
+type NumericTemplatePlaceholderNames<T extends string, Found = never> = T extends `${string}{${infer AfterOpen}`
+	? NumericTemplatePlaceholderNames<AfterOpen, Found | NumericPlaceholderNameAfterOpen<AfterOpen>>
+	: Found;
+export type MessageVariablesForTemplate<T extends string> = [TemplatePlaceholderNames<T>] extends [never]
+	? never
+	: {
+			[Name in TemplatePlaceholderNames<T>]: Name extends NumericTemplatePlaceholderNames<T>
+				? number
+				: MessageVariableValue;
+		};
+export type MessageArgsForTemplate<T extends string> = [MessageVariablesForTemplate<T>] extends [never]
+	? [variables?: undefined]
+	: [variables: MessageVariablesForTemplate<T>];
+
+function collectMessageTemplateVariables(tokens: ReadonlyArray<Token>, variables: Set<string>): void {
+	for (const token of tokens) {
+		switch (token.type) {
+			case 'argument': {
+				variables.add(token.arg);
+				break;
+			}
+			case 'function': {
+				variables.add(token.arg);
+				if (token.param) {
+					collectMessageTemplateVariables(token.param, variables);
+				}
+				break;
+			}
+			case 'plural':
+			case 'select':
+			case 'selectordinal': {
+				variables.add(token.arg);
+				for (const selectCase of token.cases) {
+					collectMessageTemplateVariables(selectCase.tokens, variables);
+				}
+				break;
+			}
+			case 'content':
+			case 'octothorpe': {
+				break;
+			}
+		}
+	}
+}
+
+const templateVariablesByTemplate = new Map<string, ReadonlySet<string>>();
+
+function getMessageTemplateVariables(template: string): ReadonlySet<string> {
+	const cachedVariables = templateVariablesByTemplate.get(template);
+	if (cachedVariables) {
+		return cachedVariables;
+	}
+	const variables = new Set<string>();
+	collectMessageTemplateVariables(parse(template), variables);
+	templateVariablesByTemplate.set(template, variables);
+	return variables;
+}
+
+export function extractMessageTemplateVariables(template: string): Set<string> {
+	return new Set(getMessageTemplateVariables(template));
+}
+
+function collectMessageTemplatePlaceholders(tokens: ReadonlyArray<Token>, placeholders: Set<string>): void {
+	for (const token of tokens) {
+		switch (token.type) {
+			case 'argument': {
+				placeholders.add(token.arg);
+				break;
+			}
+			case 'function': {
+				const param = (token.param ?? [])
+					.map((paramToken) => (paramToken.type === 'content' ? paramToken.value : ''))
+					.join('')
+					.trim();
+				placeholders.add(`${token.arg},${token.key},${param}`);
+				if (token.param) {
+					collectMessageTemplatePlaceholders(token.param, placeholders);
+				}
+				break;
+			}
+			case 'select': {
+				const keys = token.cases.map((selectCase) => selectCase.key).sort();
+				placeholders.add(`${token.arg},select[${keys.join(',')}]`);
+				for (const selectCase of token.cases) {
+					collectMessageTemplatePlaceholders(selectCase.tokens, placeholders);
+				}
+				break;
+			}
+			case 'plural':
+			case 'selectordinal': {
+				placeholders.add(`${token.arg},plural`);
+				for (const selectCase of token.cases) {
+					collectMessageTemplatePlaceholders(selectCase.tokens, placeholders);
+				}
+				break;
+			}
+			case 'content':
+			case 'octothorpe': {
+				break;
+			}
+		}
+	}
+}
+
+export function extractMessageTemplatePlaceholders(template: string): Array<string> {
+	const placeholders = new Set<string>();
+	collectMessageTemplatePlaceholders(parse(template), placeholders);
+	return [...placeholders].sort();
+}
+
+export function validateMessageTemplateVariables(
+	template: string,
+	variables: Record<string, unknown> | undefined,
+): string | null {
+	let requiredVariables: ReadonlySet<string>;
+	try {
+		requiredVariables = getMessageTemplateVariables(template);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : 'Unknown parser error';
+		return `Invalid i18n message template: ${message}`;
+	}
+	for (const name of requiredVariables) {
+		if (variables?.[name] === undefined) {
+			return `Missing required i18n variable: ${name}`;
+		}
+	}
+	return null;
+}

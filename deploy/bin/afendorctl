@@ -1,0 +1,342 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# ==============================================================================
+# AFENDOR CHAT - COMMAND LINE MANAGEMENT UTILITY (afendorctl)
+# Version: 1.1.0
+# Designed for Afendor Chat Private Deployments on Linux (Ubuntu GCP VPS)
+# ==============================================================================
+
+set -euo pipefail
+
+AFENDOR_DIR="${AFENDOR_DIR:-/opt/afendorchat}"
+if [ ! -d "${AFENDOR_DIR}" ] && [ -d "/opt/afendor" ]; then
+    AFENDOR_DIR="/opt/afendor"
+fi
+COMPOSE_DIR="${AFENDOR_DIR}/deploy/compose"
+SCRIPTS_DIR="${AFENDOR_DIR}/deploy/scripts"
+ENV_FILE="${AFENDOR_DIR}/config/env/production.env"
+BACKUP_DIR="${AFENDOR_DIR}/backups"
+
+# Colors for terminal output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+log_info() { echo -e "${BLUE}[AFENDOR]${NC} $1"; }
+log_success() { echo -e "${GREEN}[AFENDOR]${NC} $1"; }
+log_warn() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
+
+# Determine Compose Command
+get_compose_cmd() {
+    if docker compose version >/dev/null 2>&1; then
+        echo "docker compose"
+    elif command -v docker-compose >/dev/null 2>&1; then
+        echo "docker-compose"
+    else
+        log_error "Neither 'docker compose' nor 'docker-compose' found. Please install Docker Compose."
+        exit 1
+    fi
+}
+
+# Determine active compose files based on storage backend
+get_compose_args() {
+    local cmd
+    cmd="$(get_compose_cmd) --project-directory ${AFENDOR_DIR} -f ${COMPOSE_DIR}/docker-compose.yml"
+    
+    # Check if external S3 mode is active
+    if [ -f "${ENV_FILE}" ]; then
+        local s3_endpoint
+        s3_endpoint=$(grep "^AFENDOR_S3_ENDPOINT=" "${ENV_FILE}" 2>/dev/null | cut -d= -f2 || echo "")
+        
+        # If external S3 (not seaweedfs) is configured, apply s3 override
+        if [[ -n "${s3_endpoint}" && ! "${s3_endpoint}" =~ seaweedfs ]]; then
+            cmd="${cmd} -f ${COMPOSE_DIR}/docker-compose.s3.yml"
+        fi
+    fi
+    echo "${cmd}"
+}
+
+cmd_start() {
+    log_info "Starting Afendor Chat services..."
+    local compose
+    compose=$(get_compose_args)
+    $compose up -d --remove-orphans
+    log_success "Afendor Chat services started."
+}
+
+cmd_stop() {
+    log_info "Stopping Afendor Chat services..."
+    local compose
+    compose=$(get_compose_args)
+    $compose stop
+    log_success "Afendor Chat services stopped."
+}
+
+cmd_restart() {
+    log_info "Restarting Afendor Chat services..."
+    local compose
+    compose=$(get_compose_args)
+    $compose restart "$@"
+    log_success "Services restarted."
+}
+
+cmd_status() {
+    log_info "Afendor Chat Service Status:"
+    local compose
+    compose=$(get_compose_args)
+    $compose ps
+    echo ""
+    log_info "Resource Utilization:"
+    docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}" $(docker ps -q --filter "name=afendor-") 2>/dev/null || true
+}
+
+cmd_logs() {
+    local compose
+    compose=$(get_compose_args)
+    $compose logs "$@"
+}
+
+cmd_health() {
+    if [ -f "${SCRIPTS_DIR}/healthcheck.sh" ]; then
+        bash "${SCRIPTS_DIR}/healthcheck.sh"
+    else
+        log_error "Healthcheck script missing from ${SCRIPTS_DIR}/healthcheck.sh"
+        exit 1
+    fi
+}
+
+cmd_backup() {
+    if [ -f "${SCRIPTS_DIR}/backup.sh" ]; then
+        bash "${SCRIPTS_DIR}/backup.sh"
+    else
+        log_error "Backup script missing from ${SCRIPTS_DIR}/backup.sh"
+        exit 1
+    fi
+}
+
+cmd_restore() {
+    if [ -f "${SCRIPTS_DIR}/restore.sh" ]; then
+        bash "${SCRIPTS_DIR}/restore.sh" "$@"
+    else
+        log_error "Restore script missing from ${SCRIPTS_DIR}/restore.sh"
+        exit 1
+    fi
+}
+
+cmd_update() {
+    if [ -f "${SCRIPTS_DIR}/update.sh" ]; then
+        bash "${SCRIPTS_DIR}/update.sh"
+    else
+        log_error "Update script missing from ${SCRIPTS_DIR}/update.sh"
+        exit 1
+    fi
+}
+
+cmd_rollback() {
+    if [ -f "${SCRIPTS_DIR}/rollback.sh" ]; then
+        bash "${SCRIPTS_DIR}/rollback.sh"
+    else
+        log_error "Rollback script missing from ${SCRIPTS_DIR}/rollback.sh"
+        exit 1
+    fi
+}
+
+cmd_doctor() {
+    if [ -f "${SCRIPTS_DIR}/doctor.sh" ]; then
+        bash "${SCRIPTS_DIR}/doctor.sh"
+    else
+        log_error "Doctor script missing from ${SCRIPTS_DIR}/doctor.sh"
+        exit 1
+    fi
+}
+
+cmd_repair() {
+    log_info "Initiating Afendor Chat automated repair sequence..."
+    
+    # 1. Check permissions
+    log_info "1/4 Checking file and directory permissions..."
+    chmod 600 "${ENV_FILE}" 2>/dev/null || true
+    chmod +x "${AFENDOR_DIR}/deploy/bin/afendorctl" "${SCRIPTS_DIR}"/*.sh 2>/dev/null || true
+    
+    # 2. Restart internal Edge proxy
+    log_info "2/4 Restarting edge routing proxy..."
+    local compose
+    compose=$(get_compose_args)
+    $compose restart edge || true
+    
+    # 3. Test and reload Nginx
+    log_info "3/4 Validating host Nginx reverse proxy..."
+    if command -v nginx &>/dev/null; then
+        if nginx -t; then
+            systemctl reload nginx
+            log_success "Host Nginx reloaded successfully."
+        else
+            log_error "Host Nginx has syntax errors. Inspect /etc/nginx/sites-available/afendor.conf"
+        fi
+    fi
+
+    # 4. Run healthcheck
+    log_info "4/4 Validating service health post-repair..."
+    sleep 3
+    cmd_health
+    log_success "Automated repair sequence completed."
+}
+
+cmd_dns_check() {
+    local domain
+    domain=$(grep "^AFENDOR_BASE_DOMAIN=" "${ENV_FILE}" 2>/dev/null | cut -d= -f2 || echo "example.com")
+    if [ -f "${SCRIPTS_DIR}/dns-verify.sh" ]; then
+        bash "${SCRIPTS_DIR}/dns-verify.sh" "${domain}"
+    else
+        log_error "DNS verification script missing from ${SCRIPTS_DIR}/dns-verify.sh"
+        exit 1
+    fi
+}
+
+cmd_ssl_status() {
+    local domain
+    domain=$(grep "^AFENDOR_BASE_DOMAIN=" "${ENV_FILE}" 2>/dev/null | cut -d= -f2 || echo "example.com")
+    if [ -f "${SCRIPTS_DIR}/ssl-manage.sh" ]; then
+        bash "${SCRIPTS_DIR}/ssl-manage.sh" "${domain}" check
+    else
+        log_error "SSL management script missing from ${SCRIPTS_DIR}/ssl-manage.sh"
+        exit 1
+    fi
+}
+
+cmd_nginx_check() {
+    local domain
+    domain=$(grep "^AFENDOR_BASE_DOMAIN=" "${ENV_FILE}" 2>/dev/null | cut -d= -f2 || echo "example.com")
+    if [ -f "${SCRIPTS_DIR}/nginx-manage.sh" ]; then
+        bash "${SCRIPTS_DIR}/nginx-manage.sh" "${domain}" check
+    else
+        log_error "Nginx management script missing from ${SCRIPTS_DIR}/nginx-manage.sh"
+        exit 1
+    fi
+}
+
+cmd_install() {
+    if [ -f "${AFENDOR_DIR}/deploy/install.sh" ]; then
+        exec bash "${AFENDOR_DIR}/deploy/install.sh"
+    else
+        log_error "Installer script missing from ${AFENDOR_DIR}/deploy/install.sh"
+        exit 1
+    fi
+}
+
+cmd_setup() {
+    log_info "Afendor First-Time Owner Setup Status:"
+    if [ -f "${ENV_FILE}" ]; then
+        local token domain
+        token=$(grep "^AFENDOR_SETUP_TOKEN=" "${ENV_FILE}" 2>/dev/null | cut -d= -f2 || echo "")
+        domain=$(grep "^AFENDOR_BASE_DOMAIN=" "${ENV_FILE}" 2>/dev/null | cut -d= -f2 || echo "example.com")
+        echo -e "  ${BOLD}Setup Token:${NC}    ${CYAN}${token}${NC}"
+        echo -e "  ${BOLD}Web URL:${NC}        ${CYAN}https://web.${domain}${NC}"
+        echo -e "\n  Enter this setup token after registration on the web client to claim the Owner role."
+    else
+        log_error "Configuration file not found: ${ENV_FILE}"
+        exit 1
+    fi
+}
+
+cmd_help() {
+    echo -e "${BOLD}AFENDOR CHAT MANAGEMENT CLI (afendorctl)${NC}"
+    echo ""
+    echo "Usage: afendorctl <command> [arguments]"
+    echo ""
+    echo "Lifecycle Commands:"
+    echo "  install       Launch or resume the guided interactive VPS installer"
+    echo "  start         Start all Afendor Chat microservices"
+    echo "  stop          Stop all Afendor Chat microservices"
+    echo "  restart       Restart services (e.g. 'afendorctl restart api')"
+    echo "  status        Show container status, health, and resource metrics"
+    echo "  logs          Stream service logs (e.g. 'afendorctl logs -f api')"
+    echo ""
+    echo "Diagnostics & Infrastructure:"
+    echo "  doctor        Execute full hardware, Docker, port, Nginx & DB diagnostic"
+    echo "  health        Execute quick microservices health check"
+    echo "  repair        Perform automated repair (restart proxies, reload Nginx, fix permissions)"
+    echo "  dns-check     Verify all 8 application subdomains across public resolvers"
+    echo "  ssl-status    Check Let's Encrypt certificate SAN coverage and expiry"
+    echo "  nginx-check   Verify host Nginx reverse proxy syntax and virtual hosts"
+    echo ""
+    echo "Administration & Data Management:"
+    echo "  setup         Display the initial administrator setup claim token and URL"
+    echo "  backup        Perform an instant encrypted database and configuration snapshot"
+    echo "  restore       Restore database state from a backup snapshot"
+    echo "  update        Safely pull release images, backup DB, and apply update"
+    echo "  rollback      Emergency restore of previous database snapshot and containers"
+    echo "  help          Show this manual"
+    echo ""
+}
+
+# Main Dispatcher
+case "${1:-help}" in
+    install)
+        cmd_install
+        ;;
+    setup)
+        cmd_setup
+        ;;
+    start)
+        cmd_start
+        ;;
+    stop)
+        cmd_stop
+        ;;
+    restart)
+        shift
+        cmd_restart "$@"
+        ;;
+    status)
+        cmd_status
+        ;;
+    logs)
+        shift
+        cmd_logs "$@"
+        ;;
+    health)
+        cmd_health
+        ;;
+    doctor)
+        cmd_doctor
+        ;;
+    repair)
+        cmd_repair
+        ;;
+    dns-check)
+        cmd_dns_check
+        ;;
+    ssl-status)
+        cmd_ssl_status
+        ;;
+    nginx-check)
+        cmd_nginx_check
+        ;;
+    backup)
+        cmd_backup
+        ;;
+    restore)
+        shift
+        cmd_restore "$@"
+        ;;
+    update)
+        cmd_update
+        ;;
+    rollback)
+        cmd_rollback
+        ;;
+    help|--help|-h)
+        cmd_help
+        ;;
+    *)
+        log_error "Unknown command: $1"
+        cmd_help
+        exit 1
+        ;;
+esac

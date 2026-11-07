@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import deviceInventoryFixtureJson from '@fluxer/voice_engine_v2/fixtures/event_logs/device_inventory.json';
+
+import e2eeLifecycleFixtureJson from '@fluxer/voice_engine_v2/fixtures/event_logs/e2ee_lifecycle.json';
+
+import {transitionVoiceEngineV2} from '@fluxer/voice_engine_v2/src/core/reducer';
+import {
+	selectVoiceEngineV2DeviceProjection,
+	selectVoiceEngineV2E2eeProjection,
+} from '@fluxer/voice_engine_v2/src/core/selectors';
+import {
+	availableVoiceEngineV2Capabilities,
+	createVoiceEngineV2InitialSnapshot,
+	type VoiceEngineV2Snapshot,
+} from '@fluxer/voice_engine_v2/src/core/state';
+import type {VoiceEngineV2Command} from '@fluxer/voice_engine_v2/src/protocol/commands';
+import type {VoiceEngineV2Event} from '@fluxer/voice_engine_v2/src/protocol/events';
+import {describe, expect, it} from 'vitest';
+
+interface VoiceEngineV2EventLogFixture<Expected> {
+	name: string;
+	events: Array<VoiceEngineV2Event>;
+	expectedCommands: Array<Array<VoiceEngineV2Command>>;
+	expected: Expected;
+}
+
+interface E2eeLifecycleExpected {
+	nextOperationId: number;
+	status: string;
+	keyId: string | null;
+	operationId: number | null;
+	failureCode: string | null;
+}
+
+interface DeviceInventoryExpected {
+	nextOperationId: number;
+	deviceOperationId: number | null;
+	failureCode: string | null;
+	selectedAudioInputId: string | null;
+	selectedAudioInputLabel: string | null;
+	selectedAudioInputRole: string | null;
+	audioOutputCount: number;
+	cameraCount: number;
+	operationStatuses: Record<string, string>;
+}
+
+function replayFixture<Expected>(
+	fixture: VoiceEngineV2EventLogFixture<Expected>,
+	initialSnapshot: VoiceEngineV2Snapshot = createVoiceEngineV2InitialSnapshot(availableVoiceEngineV2Capabilities()),
+): VoiceEngineV2Snapshot {
+	let snapshot = initialSnapshot;
+	fixture.events.forEach((event, index) => {
+		const transition = transitionVoiceEngineV2(snapshot, event);
+		expect(transition.commands).toEqual(fixture.expectedCommands[index]);
+		snapshot = transition.snapshot;
+	});
+	return snapshot;
+}
+
+describe('voice engine v2 observability lifecycle fixtures', () => {
+	it('rejects stale E2EE completions and projects public E2EE state without reducer bookkeeping', () => {
+		const fixture = e2eeLifecycleFixtureJson as VoiceEngineV2EventLogFixture<E2eeLifecycleExpected>;
+		const snapshot = replayFixture(fixture);
+		const e2eeProjection = selectVoiceEngineV2E2eeProjection(snapshot);
+
+		expect(snapshot.nextOperationId).toBe(fixture.expected.nextOperationId);
+		expect(e2eeProjection.status).toBe(fixture.expected.status);
+		expect(e2eeProjection.keyId).toBe(fixture.expected.keyId);
+		expect(e2eeProjection.failure?.code ?? null).toBe(fixture.expected.failureCode);
+		expect('operationId' in e2eeProjection).toBe(false);
+		expect(snapshot.e2ee.operationId).toBe(fixture.expected.operationId);
+	});
+
+	it('replays typed device inventory and clears selection operations', () => {
+		const fixture = deviceInventoryFixtureJson as VoiceEngineV2EventLogFixture<DeviceInventoryExpected>;
+		const snapshot = replayFixture(fixture);
+		const deviceProjection = selectVoiceEngineV2DeviceProjection(snapshot);
+
+		expect(snapshot.nextOperationId).toBe(fixture.expected.nextOperationId);
+		expect(snapshot.devices.operationId).toBe(fixture.expected.deviceOperationId);
+		expect(snapshot.devices.failure?.code ?? null).toBe(fixture.expected.failureCode);
+		expect(deviceProjection.devices.selectedAudioInputId).toBe(fixture.expected.selectedAudioInputId);
+		expect(deviceProjection.selectedAudioInput?.label ?? null).toBe(fixture.expected.selectedAudioInputLabel);
+		expect(deviceProjection.selectedAudioInput?.role ?? null).toBe(fixture.expected.selectedAudioInputRole);
+		expect(deviceProjection.devices.audioOutputs).toHaveLength(fixture.expected.audioOutputCount);
+		expect(deviceProjection.devices.cameras).toHaveLength(fixture.expected.cameraCount);
+		expect(
+			Object.fromEntries(Object.entries(snapshot.operations).map(([id, operation]) => [id, operation.status])),
+		).toEqual(fixture.expected.operationStatuses);
+	});
+});

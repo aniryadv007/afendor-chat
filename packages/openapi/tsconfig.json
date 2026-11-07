@@ -1,0 +1,11 @@
+{
+	"extends": "../../tsconfigs/base.json",
+	"compilerOptions": {
+		"lib": ["ESNext"],
+		"types": ["node"],
+		"paths": {
+			"@fluxer/*": ["./../../packages/*"]
+		}
+	},
+	"include": ["src/**/*.tsx", "src/**/*.ts"]
+}

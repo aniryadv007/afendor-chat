@@ -1,0 +1,206 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import {Config} from '@app/api/Config';
+import {getDonationProductData} from '@app/api/donation/DonationProductData';
+import type {DonationRepository} from '@app/api/donation/DonationRepository';
+import type {EmailDnsValidationService} from '@app/api/infrastructure/EmailDnsValidationService';
+import {getInstanceProductName} from '@app/api/instance/ProductName';
+import {Logger} from '@app/api/Logger';
+import {getStripeCheckoutLocale} from '@app/api/stripe/StripeCheckoutLocale';
+import {getPortalConfigurationId} from '@app/api/stripe/StripePortalConfiguration';
+import {shouldDisableAdaptivePricing} from '@app/api/utils/CurrencyUtils';
+import {ValidationErrorCodes} from '@fluxer/constants/src/ValidationErrorCodes';
+import {InputValidationError} from '@fluxer/errors/src/domains/core/InputValidationError';
+import {DonationAmountInvalidError} from '@fluxer/errors/src/domains/donation/DonationAmountInvalidError';
+import {StripeError} from '@fluxer/errors/src/domains/payment/StripeError';
+import {StripePaymentNotAvailableError} from '@fluxer/errors/src/domains/payment/StripePaymentNotAvailableError';
+import {isDonationAmountWithinConstraints} from '@fluxer/schema/src/domains/donation/DonationAmountUtils';
+import type {DonationCurrency} from '@fluxer/schema/src/domains/donation/DonationSchemas';
+import type Stripe from 'stripe';
+
+type CheckoutSessionCreateParams = Stripe.Checkout.SessionCreateParams;
+type CheckoutSessionMode = CheckoutSessionCreateParams['mode'];
+type CheckoutSessionLineItem = NonNullable<CheckoutSessionCreateParams['line_items']>[number];
+
+function isMissingCustomerError(error: unknown): boolean {
+	return (
+		typeof error === 'object' &&
+		error !== null &&
+		'code' in error &&
+		error.code === 'resource_missing' &&
+		'param' in error &&
+		error.param === 'customer'
+	);
+}
+
+export class DonationCheckoutService {
+	constructor(
+		private readonly stripe: Stripe | null,
+		private readonly donationRepository: DonationRepository,
+		private readonly emailDnsValidationService: EmailDnsValidationService,
+	) {}
+
+	async createCheckout(params: {
+		email: string;
+		amountCents: number;
+		currency: DonationCurrency;
+		interval: 'month' | 'year' | null;
+		isBusiness?: boolean;
+		locale?: string | null;
+	}): Promise<string> {
+		if (!this.stripe) {
+			throw new StripePaymentNotAvailableError();
+		}
+		if (!isDonationAmountWithinConstraints(params.amountCents, params.currency)) {
+			throw new DonationAmountInvalidError();
+		}
+		const hasValidDns = await this.emailDnsValidationService.hasValidDnsRecords(params.email);
+		if (!hasValidDns) {
+			throw InputValidationError.fromCode('email', ValidationErrorCodes.EMAIL_DOMAIN_CANNOT_RECEIVE_MAIL);
+		}
+		const isRecurring = params.interval !== null;
+		const existingDonor = await this.donationRepository.findDonorByEmail(params.email);
+		if (isRecurring && existingDonor?.hasActiveSubscription()) {
+			return `${Config.endpoints.marketing}/donate/manage?email=${encodeURIComponent(params.email)}&alert=active_subscription`;
+		}
+		const locale = params.locale ?? null;
+		const donationProductData = getDonationProductData({
+			interval: params.interval,
+			locale,
+			productName: getInstanceProductName(),
+		});
+		try {
+			const mode: CheckoutSessionMode = isRecurring ? 'subscription' : 'payment';
+			const lineItem: CheckoutSessionLineItem = isRecurring
+				? {
+						price_data: {
+							currency: params.currency,
+							product_data: donationProductData,
+							unit_amount: params.amountCents,
+							recurring: {
+								interval: params.interval as 'month' | 'year',
+							},
+						},
+						quantity: 1,
+					}
+				: {
+						price_data: {
+							currency: params.currency,
+							product_data: donationProductData,
+							unit_amount: params.amountCents,
+						},
+						quantity: 1,
+					};
+			const isBusiness = params.isBusiness === true;
+			const donationMetadata = {
+				is_donation: 'true',
+				donation_email: params.email,
+				...(locale ? {donation_locale: locale} : {}),
+			};
+			const reusableCustomerId = isRecurring ? (existingDonor?.stripeCustomerId ?? null) : null;
+			const sessionParams: CheckoutSessionCreateParams = {
+				line_items: [lineItem],
+				mode,
+				locale: getStripeCheckoutLocale(locale),
+				...(reusableCustomerId
+					? {customer: reusableCustomerId, customer_update: {name: 'auto' as const, address: 'auto' as const}}
+					: {customer_email: params.email}),
+				metadata: {
+					...donationMetadata,
+					donation_type: isRecurring ? 'recurring' : 'one_time',
+					is_business: isBusiness ? 'true' : 'false',
+				},
+				success_url: `${Config.endpoints.marketing}/donate/success`,
+				cancel_url: `${Config.endpoints.marketing}/donate?type=${isBusiness ? 'business' : 'individual'}&currency=${params.currency}`,
+				automatic_tax: {
+					enabled: false,
+				},
+				tax_id_collection: {
+					enabled: true,
+				},
+				billing_address_collection: isBusiness ? 'required' : 'auto',
+				...(shouldDisableAdaptivePricing() ? {adaptive_pricing: {enabled: false}} : {}),
+			};
+			if (mode === 'payment') {
+				sessionParams.customer_creation = 'always';
+				sessionParams.payment_intent_data = {metadata: donationMetadata};
+				if (params.currency === 'brl') {
+					sessionParams.payment_method_options = {pix: {amount_includes_iof: 'always'}};
+				}
+			} else {
+				sessionParams.subscription_data = {metadata: donationMetadata};
+				if (params.currency === 'brl') {
+					sessionParams.payment_method_options = {
+						pix: {
+							mandate_options: {
+								amount: params.amountCents,
+								amount_includes_iof: 'always',
+								payment_schedule: params.interval === 'year' ? 'yearly' : 'monthly',
+							},
+						},
+					};
+				}
+			}
+			let session: Stripe.Checkout.Session;
+			try {
+				session = await this.stripe.checkout.sessions.create(sessionParams);
+			} catch (createError: unknown) {
+				if (!reusableCustomerId || !isMissingCustomerError(createError)) {
+					throw createError;
+				}
+				await this.clearStaleCustomerId(reusableCustomerId);
+				delete sessionParams.customer;
+				delete sessionParams.customer_update;
+				sessionParams.customer_email = params.email;
+				session = await this.stripe.checkout.sessions.create(sessionParams);
+			}
+			if (!session.url) {
+				throw new StripeError('Failed to create checkout session');
+			}
+			Logger.debug(
+				{
+					email: params.email,
+					amountCents: params.amountCents,
+					interval: params.interval,
+					mode,
+					sessionId: session.id,
+				},
+				'Donation checkout session created',
+			);
+			return session.url;
+		} catch (error: unknown) {
+			if (error instanceof StripeError || error instanceof DonationAmountInvalidError) {
+				throw error;
+			}
+			Logger.error({error, email: params.email}, 'Failed to create donation checkout session');
+			throw new StripeError('Failed to create checkout session');
+		}
+	}
+
+	async createPortalSession(stripeCustomerId: string): Promise<string | null> {
+		if (!this.stripe) {
+			throw new StripePaymentNotAvailableError();
+		}
+		try {
+			const session = await this.stripe.billingPortal.sessions.create({
+				customer: stripeCustomerId,
+				configuration: await getPortalConfigurationId(this.stripe),
+				return_url: `${Config.endpoints.marketing}/donate`,
+			});
+			Logger.debug({stripeCustomerId}, 'Donation portal session created');
+			return session.url;
+		} catch (error: unknown) {
+			if (isMissingCustomerError(error)) {
+				await this.clearStaleCustomerId(stripeCustomerId);
+				return null;
+			}
+			Logger.error({error, stripeCustomerId}, 'Failed to create donor portal session');
+			throw new StripeError('Failed to create portal session');
+		}
+	}
+
+	private async clearStaleCustomerId(stripeCustomerId: string): Promise<void> {
+		await this.donationRepository.clearDonorStripeCustomer(stripeCustomerId);
+		Logger.warn({stripeCustomerId}, 'Cleared deleted Stripe customer from donor');
+	}
+}

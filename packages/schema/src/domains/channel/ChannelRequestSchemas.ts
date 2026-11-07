@@ -1,0 +1,538 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import {ChannelTypes} from '@fluxer/constants/src/ChannelConstants';
+import {CONTENT_WARNING_TEXT_MAX_LENGTH} from '@fluxer/constants/src/GuildConstants';
+import {
+	CHANNEL_RATE_LIMIT_PER_USER_MAX,
+	CHANNEL_RATE_LIMIT_PER_USER_MIN,
+	CHANNEL_TOPIC_MAX_LENGTH,
+	CHANNEL_TOPIC_MIN_LENGTH,
+	RTC_REGION_ID_MAX_LENGTH,
+	RTC_REGION_ID_MIN_LENGTH,
+	VOICE_CHANNEL_BITRATE_MAX,
+	VOICE_CHANNEL_BITRATE_MAX_STANDARD,
+	VOICE_CHANNEL_BITRATE_MIN,
+	VOICE_CHANNEL_CONNECTION_LIMIT_MAX,
+	VOICE_CHANNEL_CONNECTION_LIMIT_MIN,
+	VOICE_CHANNEL_USER_LIMIT_MAX,
+	VOICE_CHANNEL_USER_LIMIT_MIN,
+} from '@fluxer/constants/src/LimitConstants';
+import {
+	THREAD_NAME_MAX_LENGTH,
+	THREAD_NAME_MIN_LENGTH,
+	THREAD_RATE_LIMIT_PER_USER_MAX,
+} from '@fluxer/constants/src/ThreadConstants';
+import {ChannelNicknameOverrides} from '@fluxer/schema/src/domains/channel/ChannelSchemas';
+import {
+	ForumChannelRequestFields,
+	ForumLayoutSchema,
+	ThreadAppliedTagsRequestFields,
+	ThreadParentDefaultsRequestFields,
+} from '@fluxer/schema/src/domains/channel/ForumRequestSchemas';
+import {ThreadAutoArchiveDurationSchema} from '@fluxer/schema/src/domains/channel/ThreadRequestSchemas';
+import {ReadStateResponse} from '@fluxer/schema/src/domains/gateway/GatewaySchemas';
+import {withBase64Binary} from '@fluxer/schema/src/primitives/Base64BinaryFields';
+import {ChannelOverwriteTypeSchema, GeneralChannelNameType} from '@fluxer/schema/src/primitives/ChannelValidators';
+import {createBase64ImageType} from '@fluxer/schema/src/primitives/FileValidators';
+import {ContentWarningLevelSchema} from '@fluxer/schema/src/primitives/GuildValidators';
+import {QueryBooleanType} from '@fluxer/schema/src/primitives/QueryValidators';
+import {
+	createNamedLiteral,
+	createNamedLiteralUnion,
+	createStringType,
+	Int32Type,
+	SnowflakeType,
+	UnsignedInt64Type,
+} from '@fluxer/schema/src/primitives/SchemaPrimitives';
+import {URLType} from '@fluxer/schema/src/primitives/UrlValidators';
+import {withSchemaMetadata} from '@fluxer/schema/src/SchemaMetadata';
+import {z} from 'zod';
+
+const ChannelOverwriteRequest = z.object({
+	id: SnowflakeType.describe('The ID of the role or user to overwrite permissions for'),
+	type: createNamedLiteralUnion(
+		[
+			[0, 'ROLE'],
+			[1, 'MEMBER'],
+		],
+		'The type of overwrite (0 = role, 1 = member)',
+	),
+	allow: UnsignedInt64Type.optional().describe('Bitwise value of allowed permissions'),
+	deny: UnsignedInt64Type.optional().describe('Bitwise value of denied permissions'),
+});
+
+const ChannelCommonBase = z.object({
+	topic: createStringType(CHANNEL_TOPIC_MIN_LENGTH, CHANNEL_TOPIC_MAX_LENGTH)
+		.nullish()
+		.describe(`The channel topic (${CHANNEL_TOPIC_MIN_LENGTH}-${CHANNEL_TOPIC_MAX_LENGTH} characters)`),
+	url: URLType.nullish().describe('External URL for link channels'),
+	parent_id: SnowflakeType.nullish().describe('ID of the parent category for this channel'),
+	bitrate: z
+		.number()
+		.int()
+		.min(VOICE_CHANNEL_BITRATE_MIN)
+		.max(VOICE_CHANNEL_BITRATE_MAX)
+		.nullish()
+		.describe(
+			`Voice channel bitrate in bits per second (${VOICE_CHANNEL_BITRATE_MIN}-${VOICE_CHANNEL_BITRATE_MAX}), clamped to ${VOICE_CHANNEL_BITRATE_MAX_STANDARD} unless the guild holds an AUDIO_BITRATE feature`,
+		),
+	user_limit: z
+		.number()
+		.int()
+		.min(VOICE_CHANNEL_USER_LIMIT_MIN)
+		.max(VOICE_CHANNEL_USER_LIMIT_MAX)
+		.nullish()
+		.describe(
+			`Maximum users allowed in voice channel (${VOICE_CHANNEL_USER_LIMIT_MIN}-${VOICE_CHANNEL_USER_LIMIT_MAX}, ${VOICE_CHANNEL_USER_LIMIT_MIN} means unlimited)`,
+		),
+	voice_connection_limit: z
+		.number()
+		.int()
+		.min(VOICE_CHANNEL_CONNECTION_LIMIT_MIN)
+		.max(VOICE_CHANNEL_CONNECTION_LIMIT_MAX)
+		.nullish()
+		.describe(
+			`Maximum active voice connections allowed per user in a voice channel (${VOICE_CHANNEL_CONNECTION_LIMIT_MIN}-${VOICE_CHANNEL_CONNECTION_LIMIT_MAX})`,
+		),
+	permission_overwrites: z
+		.array(ChannelOverwriteRequest)
+		.max(10000)
+		.optional()
+		.describe('Permission overwrites for roles and members'),
+	rate_limit_per_user: z
+		.number()
+		.int()
+		.min(CHANNEL_RATE_LIMIT_PER_USER_MIN)
+		.max(CHANNEL_RATE_LIMIT_PER_USER_MAX)
+		.nullish()
+		.describe(`Slowmode delay in seconds (${CHANNEL_RATE_LIMIT_PER_USER_MIN}-${CHANNEL_RATE_LIMIT_PER_USER_MAX})`),
+});
+const ChannelContentWarningFields = {
+	nsfw_override: z
+		.boolean()
+		.nullish()
+		.describe(
+			'Per-channel adult-content override (true=on, false=off, null=inherit from category then guild). Takes precedence over the legacy `nsfw` field if both are present.',
+		),
+	content_warning_level: ContentWarningLevelSchema.optional().describe(
+		'Channel-level content warning override (0=inherit, 1=force-warn)',
+	),
+	content_warning_text: z
+		.string()
+		.max(CONTENT_WARNING_TEXT_MAX_LENGTH)
+		.nullish()
+		.describe('Custom channel content warning text (max 200 characters); null inherits from parent or guild'),
+} as const;
+const ChannelCreateCommon = ChannelCommonBase.extend({
+	nsfw: z.boolean().default(false).describe('Whether the channel is marked as NSFW'),
+	...ChannelContentWarningFields,
+});
+const ChannelUpdateCommon = ChannelCommonBase.extend({
+	nsfw: z
+		.boolean()
+		.nullish()
+		.describe(
+			'Legacy: setting true maps to nsfw_override=true; setting false maps to nsfw_override=null (inherit). Prefer nsfw_override.',
+		),
+	...ChannelContentWarningFields,
+	icon: createBase64ImageType().nullish().describe('Base64-encoded icon image for group DM channels'),
+	owner_id: SnowflakeType.nullish().describe('ID of the new owner for group DM channels'),
+	nicks: ChannelNicknameOverrides.optional().describe('Custom nicknames for users in this channel'),
+	rtc_region: createStringType(RTC_REGION_ID_MIN_LENGTH, RTC_REGION_ID_MAX_LENGTH)
+		.nullish()
+		.describe(
+			`Voice region ID for the voice channel (${RTC_REGION_ID_MIN_LENGTH}-${RTC_REGION_ID_MAX_LENGTH} characters)`,
+		),
+	rtc_p2p: z
+		.boolean()
+		.optional()
+		.describe('Whether calls in the voice channel connect participants directly instead of through a voice server'),
+});
+const ChannelCreateTextRequest = ChannelCreateCommon.extend({
+	type: createNamedLiteral(ChannelTypes.GUILD_TEXT, 'GUILD_TEXT', 'Channel type (text channel)'),
+	name: GeneralChannelNameType.describe('The name of the channel'),
+});
+
+const ChannelCreateAnnouncementRequest = ChannelCreateCommon.extend({
+	type: createNamedLiteral(
+		ChannelTypes.GUILD_ANNOUNCEMENT,
+		'GUILD_ANNOUNCEMENT',
+		'Channel type (announcement channel)',
+	),
+	name: GeneralChannelNameType.describe('The name of the channel'),
+});
+
+const ChannelCreateVoiceRequest = ChannelCreateCommon.extend({
+	type: createNamedLiteral(ChannelTypes.GUILD_VOICE, 'GUILD_VOICE', 'Channel type (voice channel)'),
+	name: GeneralChannelNameType.describe('The name of the channel'),
+});
+
+const ChannelCreateCategoryRequest = ChannelCreateCommon.extend({
+	type: createNamedLiteral(ChannelTypes.GUILD_CATEGORY, 'GUILD_CATEGORY', 'Channel type (category)'),
+	name: GeneralChannelNameType.describe('The name of the category'),
+});
+
+const ChannelCreateLinkRequest = ChannelCreateCommon.extend({
+	type: createNamedLiteral(ChannelTypes.GUILD_LINK, 'GUILD_LINK', 'Channel type (link channel)'),
+	name: GeneralChannelNameType.describe('The name of the channel'),
+});
+
+const EXPERIMENT = {experiment: 'channel_threads'} as const;
+
+const ChannelCreateThreadParentTextRequest = ChannelCreateTextRequest.extend(ThreadParentDefaultsRequestFields);
+
+const ChannelCreateThreadParentAnnouncementRequest = ChannelCreateAnnouncementRequest.extend(
+	ThreadParentDefaultsRequestFields,
+);
+
+const ChannelCreateForumRequest = withSchemaMetadata(
+	ChannelCreateCommon.extend({
+		type: createNamedLiteral(ChannelTypes.GUILD_FORUM, 'GUILD_FORUM', 'Channel type (forum channel)'),
+		name: GeneralChannelNameType.describe('The name of the channel'),
+		...ForumChannelRequestFields,
+		default_forum_layout: ForumLayoutSchema.nullish(),
+	}),
+	EXPERIMENT,
+);
+
+const ChannelCreateMediaRequest = withSchemaMetadata(
+	ChannelCreateCommon.extend({
+		type: createNamedLiteral(ChannelTypes.GUILD_MEDIA, 'GUILD_MEDIA', 'Channel type (media channel)'),
+		name: GeneralChannelNameType.describe('The name of the channel'),
+		...ForumChannelRequestFields,
+	}),
+	EXPERIMENT,
+);
+
+export const ChannelCreateControlRequest = z.discriminatedUnion('type', [
+	ChannelCreateTextRequest,
+	ChannelCreateAnnouncementRequest,
+	ChannelCreateVoiceRequest,
+	ChannelCreateCategoryRequest,
+	ChannelCreateLinkRequest,
+]);
+
+export const ChannelCreateRequest = z.discriminatedUnion('type', [
+	ChannelCreateThreadParentTextRequest,
+	ChannelCreateThreadParentAnnouncementRequest,
+	ChannelCreateVoiceRequest,
+	ChannelCreateCategoryRequest,
+	ChannelCreateLinkRequest,
+	ChannelCreateForumRequest,
+	ChannelCreateMediaRequest,
+]);
+
+export type ChannelCreateRequest = z.infer<typeof ChannelCreateRequest>;
+
+const ChannelUpdateTextRequest = ChannelUpdateCommon.extend({
+	type: createNamedLiteral(ChannelTypes.GUILD_TEXT, 'GUILD_TEXT', 'Channel type (text channel)'),
+	name: GeneralChannelNameType.nullish().describe('The name of the channel'),
+});
+
+const ChannelUpdateAnnouncementRequest = ChannelUpdateCommon.extend({
+	type: createNamedLiteral(
+		ChannelTypes.GUILD_ANNOUNCEMENT,
+		'GUILD_ANNOUNCEMENT',
+		'Channel type (announcement channel)',
+	),
+	name: GeneralChannelNameType.nullish().describe('The name of the channel'),
+});
+
+const ChannelUpdateVoiceRequest = ChannelUpdateCommon.extend({
+	type: createNamedLiteral(ChannelTypes.GUILD_VOICE, 'GUILD_VOICE', 'Channel type (voice channel)'),
+	name: GeneralChannelNameType.nullish().describe('The name of the channel'),
+});
+
+const ChannelUpdateCategoryRequest = ChannelUpdateCommon.extend({
+	type: createNamedLiteral(ChannelTypes.GUILD_CATEGORY, 'GUILD_CATEGORY', 'Channel type (category)'),
+	name: GeneralChannelNameType.nullish().describe('The name of the category'),
+});
+
+const ChannelUpdateLinkRequest = ChannelUpdateCommon.extend({
+	type: createNamedLiteral(ChannelTypes.GUILD_LINK, 'GUILD_LINK', 'Channel type (link channel)'),
+	name: GeneralChannelNameType.nullish().describe('The name of the channel'),
+});
+
+const ChannelUpdateGroupDmRequest = z.object({
+	type: createNamedLiteral(ChannelTypes.GROUP_DM, 'GROUP_DM', 'Channel type (group DM)'),
+	name: GeneralChannelNameType.nullish().describe('The name of the group DM'),
+	icon: createBase64ImageType().nullish().describe('Base64-encoded icon image for the group DM'),
+	owner_id: SnowflakeType.nullish().describe('ID of the new owner of the group DM'),
+	nicks: ChannelNicknameOverrides.nullish().describe('Custom nicknames for users in this group DM'),
+	nsfw: z.boolean().nullish().describe('Whether the group DM is marked for mature content (owner only)'),
+});
+
+const ChannelUpdateThreadFields = {
+	name: createStringType(THREAD_NAME_MIN_LENGTH, THREAD_NAME_MAX_LENGTH)
+		.optional()
+		.describe('The name of the thread (1-100 characters)'),
+	archived: z.boolean().nullish().describe('Whether the thread is archived'),
+	auto_archive_duration: ThreadAutoArchiveDurationSchema.optional(),
+	locked: z.boolean().nullish().describe('Whether only moderators can unarchive the thread'),
+	rate_limit_per_user: Int32Type.max(THREAD_RATE_LIMIT_PER_USER_MAX)
+		.nullish()
+		.describe('Seconds a user has to wait before sending another message (0-21600)'),
+	flags: Int32Type.optional().describe('Channel flags'),
+};
+
+const ChannelUpdatePublicThreadRequest = z.object({
+	type: createNamedLiteral(ChannelTypes.PUBLIC_THREAD, 'PUBLIC_THREAD', 'Channel type (public thread)'),
+	...ChannelUpdateThreadFields,
+	...ThreadAppliedTagsRequestFields,
+});
+
+const ChannelUpdateAnnouncementThreadRequest = z.object({
+	type: createNamedLiteral(
+		ChannelTypes.ANNOUNCEMENT_THREAD,
+		'ANNOUNCEMENT_THREAD',
+		'Channel type (announcement thread)',
+	),
+	...ChannelUpdateThreadFields,
+});
+
+const ChannelUpdatePrivateThreadRequest = z.object({
+	type: createNamedLiteral(ChannelTypes.PRIVATE_THREAD, 'PRIVATE_THREAD', 'Channel type (private thread)'),
+	...ChannelUpdateThreadFields,
+	invitable: z.boolean().nullish().describe('Whether non-moderators can add other non-moderators'),
+});
+
+const CHANNEL_UPDATE_REQUEST_OPTIONS = [
+	ChannelUpdateTextRequest,
+	ChannelUpdateAnnouncementRequest,
+	ChannelUpdateVoiceRequest,
+	ChannelUpdateCategoryRequest,
+	ChannelUpdateLinkRequest,
+	ChannelUpdateGroupDmRequest,
+] as const;
+
+export const ChannelUpdateRequest = z.discriminatedUnion('type', [
+	...CHANNEL_UPDATE_REQUEST_OPTIONS,
+	ChannelUpdateAnnouncementThreadRequest,
+	ChannelUpdatePublicThreadRequest,
+	ChannelUpdatePrivateThreadRequest,
+]);
+
+export type ChannelUpdateRequest = z.infer<typeof ChannelUpdateRequest>;
+
+const ChannelTypeConversionField = z
+	.union([z.literal(ChannelTypes.GUILD_TEXT), z.literal(ChannelTypes.GUILD_ANNOUNCEMENT)])
+	.optional()
+	.describe('Convert between text (0) and announcement (5). Other conversions are rejected.');
+
+const CONVERTIBLE_UPDATE_REQUESTS = new Set<z.ZodObject>([ChannelUpdateTextRequest, ChannelUpdateAnnouncementRequest]);
+
+const ChannelUpdateThreadParentTextRequest = ChannelUpdateTextRequest.extend(ThreadParentDefaultsRequestFields);
+
+const ChannelUpdateThreadParentAnnouncementRequest = ChannelUpdateAnnouncementRequest.extend(
+	ThreadParentDefaultsRequestFields,
+);
+
+const ChannelUpdateForumRequest = ChannelUpdateCommon.extend({
+	type: createNamedLiteral(ChannelTypes.GUILD_FORUM, 'GUILD_FORUM', 'Channel type (forum channel)'),
+	name: GeneralChannelNameType.nullish().describe('The name of the channel'),
+	...ForumChannelRequestFields,
+	default_forum_layout: ForumLayoutSchema.nullish(),
+});
+
+const ChannelUpdateMediaRequest = ChannelUpdateCommon.extend({
+	type: createNamedLiteral(ChannelTypes.GUILD_MEDIA, 'GUILD_MEDIA', 'Channel type (media channel)'),
+	name: GeneralChannelNameType.nullish().describe('The name of the channel'),
+	...ForumChannelRequestFields,
+});
+
+export const ChannelUpdateGatedRequest = z.discriminatedUnion('type', [
+	ChannelUpdateThreadParentTextRequest,
+	ChannelUpdateThreadParentAnnouncementRequest,
+	ChannelUpdateVoiceRequest,
+	ChannelUpdateCategoryRequest,
+	ChannelUpdateLinkRequest,
+	ChannelUpdateGroupDmRequest,
+	ChannelUpdateAnnouncementThreadRequest,
+	ChannelUpdatePublicThreadRequest,
+	ChannelUpdatePrivateThreadRequest,
+	ChannelUpdateForumRequest,
+	ChannelUpdateMediaRequest,
+]);
+
+export type ChannelUpdateGatedRequest = z.infer<typeof ChannelUpdateGatedRequest>;
+
+export type ChannelUpdateNonThreadRequest =
+	| z.infer<(typeof CHANNEL_UPDATE_REQUEST_OPTIONS)[number]>
+	| z.infer<typeof ChannelUpdateThreadParentTextRequest>
+	| z.infer<typeof ChannelUpdateThreadParentAnnouncementRequest>
+	| z.infer<typeof ChannelUpdateForumRequest>
+	| z.infer<typeof ChannelUpdateMediaRequest>;
+
+export type ChannelUpdateThreadRequest =
+	| z.infer<typeof ChannelUpdateAnnouncementThreadRequest>
+	| z.infer<typeof ChannelUpdatePublicThreadRequest>
+	| z.infer<typeof ChannelUpdatePrivateThreadRequest>;
+
+export const ChannelUpdatePublicThreadRequestBody = withSchemaMetadata(
+	ChannelUpdatePublicThreadRequest.omit({type: true}),
+	{experiment: 'channel_threads'},
+);
+
+export const ChannelUpdatePrivateThreadRequestBody = withSchemaMetadata(
+	ChannelUpdatePrivateThreadRequest.omit({type: true}),
+	{experiment: 'channel_threads'},
+);
+
+export const ChannelUpdateThreadParentRequestBody = withSchemaMetadata(
+	z.object(ThreadParentDefaultsRequestFields),
+	EXPERIMENT,
+);
+
+export const ChannelUpdateForumRequestBody = withSchemaMetadata(
+	ChannelUpdateForumRequest.omit({type: true}),
+	EXPERIMENT,
+);
+
+export const ChannelUpdateMediaRequestBody = withSchemaMetadata(
+	ChannelUpdateMediaRequest.omit({type: true}),
+	EXPERIMENT,
+);
+
+export const ChannelUpdateRequestBody = z.union([
+	...CHANNEL_UPDATE_REQUEST_OPTIONS.map((option) => {
+		const {type, ...shape} = option.shape;
+		return CONVERTIBLE_UPDATE_REQUESTS.has(option)
+			? z.object({...shape, type: ChannelTypeConversionField})
+			: z.object(shape);
+	}),
+	ChannelUpdatePublicThreadRequestBody,
+	ChannelUpdatePrivateThreadRequestBody,
+	ChannelUpdateThreadParentRequestBody,
+	ChannelUpdateForumRequestBody,
+	ChannelUpdateMediaRequestBody,
+]);
+
+export const PermissionOverwriteCreateRequest = z.object({
+	type: ChannelOverwriteTypeSchema.describe('The type of overwrite (0 = role, 1 = member)'),
+	allow: UnsignedInt64Type.nullish().describe('Bitwise value of allowed permissions'),
+	deny: UnsignedInt64Type.nullish().describe('Bitwise value of denied permissions'),
+});
+
+export type PermissionOverwriteCreateRequest = z.infer<typeof PermissionOverwriteCreateRequest>;
+
+export const DeleteChannelQuery = z.object({
+	silent: QueryBooleanType.describe('Whether to suppress the system message when leaving a group DM'),
+	delete_messages: QueryBooleanType.optional().describe(
+		'When leaving a group DM, also delete all messages the caller has sent in the channel',
+	),
+});
+
+export type DeleteChannelQuery = z.infer<typeof DeleteChannelQuery>;
+
+export const ReadStateAckBulkRequest = z.object({
+	read_states: z
+		.array(
+			z.object({
+				channel_id: SnowflakeType.describe('The ID of the channel'),
+				message_id: SnowflakeType.describe('The ID of the last read message'),
+			}),
+		)
+		.min(1)
+		.max(100)
+		.describe('Array of channel/message pairs to acknowledge'),
+});
+
+export type ReadStateAckBulkRequest = z.infer<typeof ReadStateAckBulkRequest>;
+
+export const ReadStateAckRequest = z.object({
+	read_states: z
+		.array(
+			z.object({
+				channel_id: SnowflakeType.describe('The ID of the channel'),
+				message_id: SnowflakeType.describe('The ID of the message to acknowledge'),
+				mention_count: Int32Type.optional().describe('Number of unread mentions after this acknowledgement'),
+				manual: z.boolean().optional().describe('Whether this acknowledgement is an explicit manual read marker'),
+			}),
+		)
+		.min(1)
+		.max(100)
+		.describe('Read-state acknowledgements to apply. Supports normal and manual acknowledgements.'),
+});
+
+export type ReadStateAckRequest = z.infer<typeof ReadStateAckRequest>;
+
+export const ReadStateAckResponse = z.object({
+	read_states: z.array(ReadStateResponse).describe('Authoritative read states after applying the acknowledgement'),
+});
+
+export type ReadStateAckResponse = z.infer<typeof ReadStateAckResponse>;
+
+export const ChannelPositionUpdateRequest = z
+	.array(
+		z.object({
+			id: SnowflakeType.describe('The ID of the channel to reposition'),
+			position: z.number().int().nonnegative().optional().describe('New position for the channel'),
+			parent_id: SnowflakeType.nullish().describe('New parent category ID'),
+			preceding_sibling_id: SnowflakeType.nullish().describe(
+				'ID of the sibling channel that should directly precede this channel after reordering',
+			),
+			lock_permissions: z.boolean().optional().describe('Whether to sync permissions with the new parent'),
+		}),
+	)
+	.max(10000);
+
+export type ChannelPositionUpdateRequest = z.infer<typeof ChannelPositionUpdateRequest>;
+
+const GeoCoordinateString = createStringType(1, 32);
+export const CallUpdateBodySchema = z.object({
+	region: createStringType(RTC_REGION_ID_MIN_LENGTH, RTC_REGION_ID_MAX_LENGTH)
+		.nullish()
+		.describe(
+			`The preferred voice region for the call (${RTC_REGION_ID_MIN_LENGTH}-${RTC_REGION_ID_MAX_LENGTH} characters). Omit or set to null for automatic region selection.`,
+		),
+	latitude: GeoCoordinateString.optional().describe('Client latitude used for automatic region selection'),
+	longitude: GeoCoordinateString.optional().describe('Client longitude used for automatic region selection'),
+});
+
+export type CallUpdateBodySchema = z.infer<typeof CallUpdateBodySchema>;
+
+export const CallRingBodySchema = z.object({
+	recipients: z.array(SnowflakeType).max(1000).optional().describe('User IDs to ring for the call'),
+	latitude: GeoCoordinateString.optional().describe('Client latitude used for automatic region selection'),
+	longitude: GeoCoordinateString.optional().describe('Client longitude used for automatic region selection'),
+});
+
+export type CallRingBodySchema = z.infer<typeof CallRingBodySchema>;
+
+export const StreamUpdateBodySchema = z.object({
+	region: createStringType(RTC_REGION_ID_MIN_LENGTH, RTC_REGION_ID_MAX_LENGTH)
+		.optional()
+		.describe(
+			`The preferred voice region for the stream (${RTC_REGION_ID_MIN_LENGTH}-${RTC_REGION_ID_MAX_LENGTH} characters)`,
+		),
+});
+
+export type StreamUpdateBodySchema = z.infer<typeof StreamUpdateBodySchema>;
+
+export const StreamPreviewUploadBodySchema = z.object({
+	channel_id: SnowflakeType.describe('The ID of the channel where the stream is active'),
+	thumbnail: withBase64Binary(createStringType(1, 2000000)).describe('Base64-encoded thumbnail image data'),
+	content_type: createStringType(1, 64).optional().describe('MIME type of the thumbnail image'),
+});
+
+export type StreamPreviewUploadBodySchema = z.infer<typeof StreamPreviewUploadBodySchema>;
+
+export const StreamPreviewUploadUrlBodySchema = z.object({
+	channel_id: SnowflakeType.describe('The ID of the channel where the stream is active'),
+	content_type: createStringType(1, 64).optional().describe('MIME type of the thumbnail image'),
+});
+
+export type StreamPreviewUploadUrlBodySchema = z.infer<typeof StreamPreviewUploadUrlBodySchema>;
+
+export const StreamPreviewResponse = z.file().describe('The current stream preview image');
+
+export const StreamPreviewUploadUrlResponseSchema = z.object({
+	upload_url: URLType.describe('URL used to upload the stream preview with a PUT request'),
+	method: z.literal('PUT').describe('HTTP method to use for the upload URL'),
+	content_type: createStringType(1, 64).describe('MIME type that must be sent with the upload request'),
+	expires_at: z.iso.datetime().describe('ISO timestamp when the upload URL expires'),
+	expires_in: Int32Type.describe('Number of seconds the upload URL remains valid'),
+	max_bytes: Int32Type.describe('Maximum supported preview image size in bytes'),
+});
+
+export type StreamPreviewUploadUrlResponseSchema = z.infer<typeof StreamPreviewUploadUrlResponseSchema>;

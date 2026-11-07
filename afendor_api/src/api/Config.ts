@@ -1,0 +1,746 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import type {
+	AgePolicyConfig,
+	APIConfig,
+	BlueskyOAuthConfig,
+	OperatorPassConfig,
+	TrustedCallerConfig,
+} from '@app/api/config/APIConfig';
+import {
+	parseOperatorPassMaxQuantity,
+	parseOperatorPassReleaseLists,
+	parseOperatorPassStandardPrices,
+	parseOperatorPassWallTiers,
+	parseOperatorPassWithdrawalCountries,
+	resolveOperatorPassDisabledCurrencies,
+} from '@app/api/operator_pass/OperatorPassPrices';
+import {DonationRateLimitConfigs} from '@app/api/rate_limit_configs/DonationRateLimitConfig';
+import {OperatorPassRateLimitConfigs} from '@app/api/rate_limit_configs/OperatorPassRateLimitConfig';
+import {parseIpBanEntry} from '@app/api/utils/IpRangeUtils';
+import {trimTrailingSlash} from '@app/api/utils/UrlUtils';
+import type {WorkerTaskName} from '@app/api/worker/WorkerLaneConfig';
+import type {MasterConfig} from '@fluxer/config/src/MasterConfig';
+import {EmailDeliveryModes} from '@fluxer/constants/src/AccountConfigConstants';
+import {smtpTlsModeFromSecure} from '@fluxer/constants/src/SmtpConstants';
+import {parseIpAddress} from '@fluxer/ip_utils/src/IpAddress';
+import type {GeoEntry} from '@fluxer/schema/src/domains/geolocation/GeolocationSchemas';
+import {normalizeString} from '@fluxer/schema/src/primitives/SchemaPrimitives';
+import {parseGeoipSourceConfig, resolveGeoipRuntimeSourceConfig} from '@pkgs/geoip/src/GeoipStartup';
+
+function extractHostname(url: string): string {
+	try {
+		return new URL(url).hostname;
+	} catch {
+		throw new Error(`Invalid URL: ${url}`);
+	}
+}
+
+function resolveEmailAppBaseUrl(master: MasterConfig): string {
+	const configuredAppBaseUrl = master.integrations.email.app_base_url.trim();
+	if (!configuredAppBaseUrl) return trimTrailingSlash(master.endpoints.app);
+	try {
+		const appBaseUrl = new URL(configuredAppBaseUrl);
+		if (
+			(appBaseUrl.protocol !== 'http:' && appBaseUrl.protocol !== 'https:') ||
+			appBaseUrl.username ||
+			appBaseUrl.password ||
+			appBaseUrl.search ||
+			appBaseUrl.hash
+		) {
+			throw new Error(`Invalid email app base URL: ${configuredAppBaseUrl}`);
+		}
+		return trimTrailingSlash(appBaseUrl.toString());
+	} catch {
+		throw new Error(`Invalid email app base URL: ${configuredAppBaseUrl}`);
+	}
+}
+
+function toSmtpConfig(
+	smtp: NonNullable<MasterConfig['integrations']['email']['smtp']>,
+): NonNullable<APIConfig['email']['smtp']> {
+	return {
+		host: smtp.host,
+		port: smtp.port,
+		username: smtp.username,
+		password: smtp.password,
+		tlsMode: smtp.tls_mode ?? smtpTlsModeFromSecure(smtp.secure, smtp.port),
+	};
+}
+
+function resolveEnvEmailSwitch(
+	email: MasterConfig['integrations']['email'],
+): Pick<APIConfig['email'], 'enabled' | 'provider'> {
+	switch (email.delivery) {
+		case undefined:
+			return {enabled: email.enabled, provider: email.provider};
+		case EmailDeliveryModes.SMTP:
+			return {enabled: true, provider: 'smtp'};
+		case EmailDeliveryModes.OFF:
+			return {enabled: false, provider: email.provider};
+	}
+}
+
+function isBoolean(value: unknown): value is boolean {
+	return typeof value === 'boolean';
+}
+
+function resolveValidateResponses(master: MasterConfig): boolean {
+	if (isBoolean(master.dev.validate_responses)) {
+		return master.dev.validate_responses;
+	}
+	return master.env !== 'production';
+}
+
+function resolveTrustClientIpHeader(proxyConfig: object): boolean {
+	const configuredValue = Reflect.get(proxyConfig, 'trust_client_ip_header');
+	if (isBoolean(configuredValue)) {
+		return configuredValue;
+	}
+	return false;
+}
+
+function normalizeIpBanExemptIps(values: Array<string>): Array<string> {
+	const normalized = new Set<string>();
+	for (const value of values) {
+		if (value.includes('/')) {
+			const range = parseIpBanEntry(value);
+			if (range?.type !== 'range') {
+				throw new Error(`AFENDOR_API_IP_BAN_EXEMPT_IPS contains an invalid CIDR range: ${value}`);
+			}
+			normalized.add(range.canonical);
+			continue;
+		}
+		const parsed = parseIpAddress(value);
+		if (!parsed) {
+			throw new Error(`AFENDOR_API_IP_BAN_EXEMPT_IPS contains an invalid IP address: ${value}`);
+		}
+		normalized.add(parsed.normalized);
+	}
+	return Array.from(normalized);
+}
+
+const TRUSTED_CALLER_MIN_KEY_LENGTH = 32;
+
+function parseTrustedCaller(entry: unknown, index: number): TrustedCallerConfig {
+	const label = `AFENDOR_API_TRUSTED_CALLERS entry ${index + 1}`;
+	if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+		throw new Error(`${label} must be a JSON object`);
+	}
+	const name = Reflect.get(entry, 'name');
+	if (typeof name !== 'string' || name.trim().length === 0) {
+		throw new Error(`${label} must have a name`);
+	}
+	const key = Reflect.get(entry, 'key');
+	if (typeof key !== 'string' || key.trim().length < TRUSTED_CALLER_MIN_KEY_LENGTH) {
+		throw new Error(`${label} key must be at least ${TRUSTED_CALLER_MIN_KEY_LENGTH} characters`);
+	}
+	const buckets = Reflect.get(entry, 'buckets');
+	if (
+		!Array.isArray(buckets) ||
+		buckets.length === 0 ||
+		!buckets.every((bucket) => typeof bucket === 'string' && bucket.trim().length > 0)
+	) {
+		throw new Error(`${label} buckets must be a non-empty list of bucket names`);
+	}
+	return {
+		name: name.trim(),
+		key: key.trim(),
+		buckets: buckets.map((bucket: string) => bucket.trim()),
+	};
+}
+
+function buildTrustedCallers(master: MasterConfig): Array<TrustedCallerConfig> {
+	const trustedCallers = (master.services.api.trusted_callers ?? []).map(parseTrustedCaller);
+	const donationProxyKey = (master.services.api.donation_proxy_key ?? '').trim();
+	if (donationProxyKey.length > 0 && donationProxyKey.length < TRUSTED_CALLER_MIN_KEY_LENGTH) {
+		throw new Error(`AFENDOR_API_DONATION_PROXY_KEY must be at least ${TRUSTED_CALLER_MIN_KEY_LENGTH} characters`);
+	}
+	if (donationProxyKey.length > 0) {
+		trustedCallers.push({
+			name: 'donation',
+			key: donationProxyKey,
+			buckets: [
+				...Object.values(DonationRateLimitConfigs).map((routeConfig) => routeConfig.bucket),
+				...Object.values(OperatorPassRateLimitConfigs)
+					.filter((routeConfig) => routeConfig.trustForwardedClientIp === true)
+					.map((routeConfig) => routeConfig.bucket),
+			],
+		});
+	}
+	return trustedCallers;
+}
+
+const HOSTED_AGE_RESTRICTED_REGIONS = ['GB', 'BR'];
+
+function toGeoEntry(region: string): GeoEntry {
+	const separator = region.indexOf('-');
+	if (separator === -1) {
+		return {countryCode: region, regionCode: null};
+	}
+	return {countryCode: region.slice(0, separator), regionCode: region.slice(separator + 1)};
+}
+
+function buildAgePolicyConfig(master: MasterConfig): AgePolicyConfig {
+	const {enabled, restricted_regions} = master.instance.age_policy;
+	const regionsSet = restricted_regions !== undefined;
+	if (!(enabled ?? (regionsSet || !master.instance.self_hosted))) {
+		return {restricted: []};
+	}
+	const restricted = regionsSet ? restricted_regions : HOSTED_AGE_RESTRICTED_REGIONS;
+	return {restricted: restricted.map(toGeoEntry)};
+}
+
+const SETUP_TOKEN_MIN_LENGTH = 32;
+const SETUP_TOKEN_MAX_LENGTH = 256;
+
+function resolveSetupToken(master: MasterConfig): string | null {
+	const token = master.instance.setup.token?.trim();
+	if (!token) return null;
+	if (
+		token.length < SETUP_TOKEN_MIN_LENGTH ||
+		token.length > SETUP_TOKEN_MAX_LENGTH ||
+		normalizeString(token) !== token
+	) {
+		throw new Error(
+			`AFENDOR_SETUP_TOKEN must be ${SETUP_TOKEN_MIN_LENGTH} to ${SETUP_TOKEN_MAX_LENGTH} printable characters`,
+		);
+	}
+	return token;
+}
+
+const ISO_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/u;
+const OPERATOR_PASS_MAX_GRACE_MINUTES = 24 * 60;
+
+function parseIsoInstant(value: string | undefined, envName: string): Date {
+	const trimmed = (value ?? '').trim();
+	const parsed = ISO_INSTANT_PATTERN.test(trimmed) ? Date.parse(trimmed) : Number.NaN;
+	if (!Number.isFinite(parsed)) {
+		throw new Error(`${envName} must be an ISO-8601 instant such as 2026-11-01T16:00:00Z`);
+	}
+	return new Date(parsed);
+}
+
+function parseOptionalIsoInstant(value: string | undefined, envName: string): Date | null {
+	return (value ?? '').trim().length === 0 ? null : parseIsoInstant(value, envName);
+}
+
+function parseOptionalSnowflake(value: string | undefined, envName: string): bigint | null {
+	const trimmed = (value ?? '').trim();
+	if (trimmed.length === 0) {
+		return null;
+	}
+	if (!/^[1-9]\d{0,19}$/u.test(trimmed)) {
+		throw new Error(`${envName} must be a snowflake ID`);
+	}
+	return BigInt(trimmed);
+}
+
+function resolveOperatorPassClockOffsetMs(master: MasterConfig): number {
+	const override = (master.operator_pass.now_override ?? '').trim();
+	if (override.length === 0) {
+		return 0;
+	}
+	const overrideAt = parseIsoInstant(override, 'AFENDOR_OPERATOR_PASS_NOW');
+	if (master.env === 'production' && !master.dev.test_mode_enabled) {
+		console.warn('AFENDOR_OPERATOR_PASS_NOW is ignored in production');
+		return 0;
+	}
+	return overrideAt.getTime() - Date.now();
+}
+
+function buildOperatorPassConfig(master: MasterConfig): OperatorPassConfig {
+	const source = master.operator_pass;
+	const priceRisesAt = parseOptionalIsoInstant(source.price_rises_at, 'AFENDOR_OPERATOR_PASS_PRICE_RISES_AT');
+	if (priceRisesAt === null && master.env === 'production' && !master.instance.self_hosted) {
+		console.warn('AFENDOR_OPERATOR_PASS_PRICE_RISES_AT is not set, the Operator Pass early bird price never ends');
+	}
+	const graceMinutes = source.grace_minutes;
+	if (
+		typeof graceMinutes !== 'number' ||
+		!Number.isInteger(graceMinutes) ||
+		graceMinutes < 0 ||
+		graceMinutes > OPERATOR_PASS_MAX_GRACE_MINUTES
+	) {
+		throw new Error(
+			`AFENDOR_OPERATOR_PASS_GRACE_MINUTES must be an integer between 0 and ${OPERATOR_PASS_MAX_GRACE_MINUTES}`,
+		);
+	}
+	const labsGuildId = parseOptionalSnowflake(source.labs_guild_id, 'AFENDOR_LABS_GUILD_ID');
+	const labsOperatorRoleId = parseOptionalSnowflake(source.labs_operator_role_id, 'AFENDOR_LABS_OPERATOR_ROLE_ID');
+	if ((labsGuildId === null) !== (labsOperatorRoleId === null)) {
+		throw new Error('AFENDOR_LABS_GUILD_ID and AFENDOR_LABS_OPERATOR_ROLE_ID must be set together');
+	}
+	const labsVisionaryRoleId = parseOptionalSnowflake(source.labs_visionary_role_id, 'AFENDOR_LABS_VISIONARY_ROLE_ID');
+	if (labsVisionaryRoleId !== null && labsGuildId === null) {
+		throw new Error('AFENDOR_LABS_VISIONARY_ROLE_ID needs AFENDOR_LABS_GUILD_ID');
+	}
+	const labsAccessRoleId = parseOptionalSnowflake(source.labs_access_role_id, 'AFENDOR_LABS_ACCESS_ROLE_ID');
+	if (labsAccessRoleId !== null && labsGuildId === null) {
+		throw new Error('AFENDOR_LABS_ACCESS_ROLE_ID needs AFENDOR_LABS_GUILD_ID');
+	}
+	const labsOperatorsChannelId = parseOptionalSnowflake(
+		source.labs_operators_channel_id,
+		'AFENDOR_LABS_OPERATORS_CHANNEL_ID',
+	);
+	if (labsOperatorsChannelId !== null && labsGuildId === null) {
+		throw new Error('AFENDOR_LABS_OPERATORS_CHANNEL_ID needs AFENDOR_LABS_GUILD_ID');
+	}
+	const standardPricesMinor = parseOperatorPassStandardPrices(source.standard_prices_minor);
+	const hostedSale = priceRisesAt !== null && master.env === 'production' && !master.instance.self_hosted;
+	if (hostedSale && standardPricesMinor === null) {
+		throw new Error(
+			'AFENDOR_OPERATOR_PASS_STANDARD_PRICE_* must be set in production when AFENDOR_OPERATOR_PASS_PRICE_RISES_AT is set',
+		);
+	}
+	if (
+		hostedSale &&
+		(labsGuildId === null ||
+			labsOperatorRoleId === null ||
+			labsVisionaryRoleId === null ||
+			labsOperatorsChannelId === null)
+	) {
+		throw new Error(
+			'AFENDOR_LABS_GUILD_ID, AFENDOR_LABS_OPERATOR_ROLE_ID, AFENDOR_LABS_VISIONARY_ROLE_ID and AFENDOR_LABS_OPERATORS_CHANNEL_ID must be set in production when AFENDOR_OPERATOR_PASS_PRICE_RISES_AT is set',
+		);
+	}
+	return {
+		priceRisesAt,
+		graceMs: graceMinutes * 60 * 1000,
+		clockOffsetMs: resolveOperatorPassClockOffsetMs(master),
+		labsGuildId,
+		labsOperatorRoleId,
+		labsVisionaryRoleId,
+		labsAccessRoleId,
+		labsOperatorsChannelId,
+		standardPricesMinor,
+		releaseLists: parseOperatorPassReleaseLists(source.release_lists),
+		withdrawalCountries: parseOperatorPassWithdrawalCountries(source.withdrawal_countries),
+		wallTierMinimums: parseOperatorPassWallTiers(source.wall_tiers),
+		maxQuantity: parseOperatorPassMaxQuantity(source.max_quantity),
+		disabledCurrencies: resolveOperatorPassDisabledCurrencies(source.localized_prices_enabled),
+	};
+}
+
+export function buildAPIConfigFromMaster(master: MasterConfig): APIConfig {
+	if (!master.internal) {
+		throw new Error('internal configuration is required for the API');
+	}
+	const cassandraSource = master.database.cassandra;
+	const postgresSource = master.database.postgres;
+	const apiWorkerConfig = master.services.api?.worker;
+	const s3Config = master.s3;
+	const geoipSourceConfig = resolveGeoipRuntimeSourceConfig(parseGeoipSourceConfig(master.geoip.maxmind_db_path), {
+		serviceName: 'api',
+	});
+	const uploadRelayConfig = master.services.media_proxy.upload_relay;
+	const uploadRelaySecretBase64 = uploadRelayConfig.secret_base64;
+	if (uploadRelaySecretBase64.length === 0) {
+		throw new Error('AFENDOR_MEDIA_PROXY_UPLOAD_RELAY_SECRET_BASE64 is required for the API');
+	}
+	if (Buffer.from(uploadRelaySecretBase64, 'base64').length < 32) {
+		throw new Error('AFENDOR_MEDIA_PROXY_UPLOAD_RELAY_SECRET_BASE64 must decode to at least 32 bytes');
+	}
+	const trustedCallers = buildTrustedCallers(master);
+	if (!s3Config) {
+		throw new Error('S3 configuration is required for the API');
+	}
+	const s3Buckets = s3Config.buckets ?? {
+		cdn: '',
+		uploads: '',
+		reports: '',
+		harvests: '',
+	};
+	if (master.database.backend === 'cassandra' && !cassandraSource) {
+		throw new Error('Cassandra configuration is required.');
+	}
+	if (master.database.backend === 'postgres' && !postgresSource) {
+		throw new Error('Postgres configuration is required.');
+	}
+	return {
+		nodeEnv: master.env === 'test' ? 'development' : master.env,
+		port: master.services.api.port,
+		headersTimeoutMs: master.services.api.headers_timeout_ms,
+		requestTimeoutMs: master.services.api.request_timeout_ms,
+		maxInflightRequests: master.services.api.max_inflight_requests,
+		maxConcurrentFormUploads: master.services.api.max_concurrent_form_uploads,
+		automatedMessageDeletionDelayDays: master.services.api.automated_message_deletion_delay_days,
+		ipBanExemptIps: normalizeIpBanExemptIps(master.services.api.ip_ban_exempt_ips),
+		cassandra: {
+			hosts: cassandraSource?.hosts.join(',') ?? '',
+			port: cassandraSource?.port ?? 9042,
+			keyspace: cassandraSource?.keyspace ?? '',
+			localDc: cassandraSource?.local_dc ?? '',
+			username: cassandraSource?.username ?? '',
+			password: cassandraSource?.password ?? '',
+		},
+		postgres: {
+			url: postgresSource?.url ?? '',
+			host: postgresSource?.host ?? '127.0.0.1',
+			port: postgresSource?.port ?? 5432,
+			database: postgresSource?.database ?? 'fluxer',
+			username: postgresSource?.username ?? 'fluxer',
+			password: postgresSource?.password ?? 'fluxer',
+			ssl: postgresSource?.ssl ?? false,
+			sslCa: postgresSource?.ssl_ca ?? '',
+			maxConnections: postgresSource?.max_connections ?? 20,
+			kvTable: postgresSource?.kv_table ?? 'afendor_kv',
+			preparedStatements: postgresSource?.prepared_statements ?? true,
+		},
+		database: {
+			backend: master.database.backend,
+		},
+		kv: {
+			url: master.internal.kv,
+			mode: master.internal.kv_mode,
+		},
+		nats: {
+			coreUrl: master.services.nats?.core_url ?? 'nats://127.0.0.1:4222',
+			jetStreamUrl: master.services.nats?.jetstream_url ?? 'nats://127.0.0.1:4223',
+			authToken: master.services.nats?.auth_token ?? '',
+		},
+		storageChangeFeed: {
+			enabled: master.services.api.storage_change_feed?.enabled ?? false,
+			stream: master.services.api.storage_change_feed?.stream ?? 'STORAGE_CHANGES',
+			skipBuckets: master.services.api.storage_change_feed?.skip_buckets ?? [s3Buckets.uploads],
+		},
+		search: {
+			engine: master.integrations.search?.engine ?? 'elasticsearch',
+			url: master.integrations.search?.url ?? 'http://127.0.0.1:9200',
+			apiKey: master.integrations.search?.api_key ?? '',
+			username: master.integrations.search?.username ?? '',
+			password: master.integrations.search?.password ?? '',
+			tlsRejectUnauthorized: master.integrations.search?.tls_reject_unauthorized ?? true,
+		},
+		mediaProxy: {
+			host: extractHostname(master.internal.media_proxy),
+			port: new URL(master.internal.media_proxy).port
+				? Number.parseInt(new URL(master.internal.media_proxy).port, 10)
+				: 80,
+			secretKey: master.services.media_proxy.secret_key,
+			uploadRelay: {
+				endpoint: trimTrailingSlash(uploadRelayConfig.endpoint),
+				relaySecretBase64: uploadRelaySecretBase64,
+				maxBodyBytes: uploadRelayConfig.max_body_bytes,
+				tokenTtlSecs: uploadRelayConfig.token_ttl_secs,
+				keepDirectCountries: uploadRelayConfig.keep_direct_countries,
+			},
+			attachmentUrls: {
+				secretsBase64: master.services.media_proxy.attachment_urls.secrets_base64,
+			},
+		},
+		geoip: geoipSourceConfig,
+		proxy: {
+			trust_client_ip_header: resolveTrustClientIpHeader(master.proxy),
+			client_ip_header: (Reflect.get(master.proxy, 'client_ip_header') as string | undefined) ?? 'x-forwarded-for',
+		},
+		endpoints: {
+			apiPublic: master.endpoints.api,
+			apiPublicDiscovery: master.services.api.discovery_public_endpoint || master.endpoints.api,
+			apiTransportDiscovery: master.services.api.discovery_transport_endpoint || null,
+			apiClient: master.endpoints.api_client,
+			webApp: master.endpoints.app,
+			webAppOrigins: [...new Set([new URL(master.endpoints.app).origin, ...master.services.api.app_origin_aliases])],
+			gateway: master.endpoints.gateway,
+			media: master.endpoints.media,
+			marketing: master.endpoints.marketing,
+			admin: master.endpoints.admin,
+			invite: master.endpoints.invite,
+			gift: master.endpoints.gift,
+			staticCdn: master.endpoints.static_cdn,
+		},
+		internal: {
+			gatewayRpcAuthToken: master.services.gateway.rpc_auth_token ?? '',
+			trustedCallers,
+		},
+		hosts: {
+			marketing: extractHostname(master.endpoints.marketing),
+			unfurlIgnored: master.services.api.unfurl_ignored_hosts,
+		},
+		s3: {
+			endpoint: s3Config.endpoint,
+			presignedUrlBase: s3Config.presigned_url_base,
+			forcePathStyle: s3Config.force_path_style,
+			region: s3Config.region,
+			accessKeyId: s3Config.access_key_id,
+			secretAccessKey: s3Config.secret_access_key,
+			buckets: s3Buckets,
+		},
+		email: {
+			...resolveEnvEmailSwitch(master.integrations.email),
+			webhookSecret: master.integrations.email.webhook_secret ?? undefined,
+			fromEmail: master.integrations.email.from_email,
+			fromName: master.integrations.email.from_name,
+			replyToEmail: master.integrations.email.reply_to_email,
+			supportAlertEmail: master.integrations.email.support_alert_email?.trim() || null,
+			appBaseUrl: resolveEmailAppBaseUrl(master),
+			smtp: master.integrations.email.smtp ? toSmtpConfig(master.integrations.email.smtp) : undefined,
+			fallback: master.integrations.email.fallback
+				? {
+						domains: master.integrations.email.fallback.domains,
+						smtp: {
+							...toSmtpConfig(master.integrations.email.fallback.smtp),
+							headers: master.integrations.email.fallback.smtp.headers,
+						},
+					}
+				: undefined,
+		},
+		blocklistFeeds: {
+			enabled: master.integrations.blocklist_feeds.enabled ?? !master.instance.self_hosted,
+		},
+		breachedPasswordCheck: {
+			enabled: master.integrations.breached_password_check.enabled ?? !master.instance.self_hosted,
+		},
+		voice: {
+			enabled: master.integrations.voice.enabled,
+			apiKey: master.integrations.voice.api_key,
+			apiSecret: master.integrations.voice.api_secret,
+			url: master.integrations.voice.url,
+			internalUrl: master.integrations.voice.internal_url,
+			bundled: master.integrations.voice.bundled ?? true,
+			defaultRegion: master.integrations.voice.default_region,
+			p2pStunUrls: master.integrations.voice.p2p_stun_urls,
+			turnServers: master.integrations.voice.turn_servers ?? [],
+			joinAllowPrivateEndpoints: master.integrations.voice.join_allow_private_endpoints ?? false,
+			healthIntervalMs: master.integrations.voice.health_interval_ms ?? 15000,
+		},
+		stripe: {
+			enabled: master.integrations.stripe.enabled,
+			secretKey: master.integrations.stripe.secret_key,
+			webhookSecret: master.integrations.stripe.webhook_secret,
+			prices: master.integrations.stripe.prices
+				? {
+						monthlyUsd: master.integrations.stripe.prices.monthly_usd,
+						monthlyEur: master.integrations.stripe.prices.monthly_eur,
+						monthlyBrl: master.integrations.stripe.prices.monthly_brl,
+						monthlyDkk: master.integrations.stripe.prices.monthly_dkk,
+						monthlyInr: master.integrations.stripe.prices.monthly_inr,
+						monthlyIsk: master.integrations.stripe.prices.monthly_isk,
+						monthlyNok: master.integrations.stripe.prices.monthly_nok,
+						monthlyPln: master.integrations.stripe.prices.monthly_pln,
+						monthlySek: master.integrations.stripe.prices.monthly_sek,
+						monthlyTry: master.integrations.stripe.prices.monthly_try,
+						yearlyUsd: master.integrations.stripe.prices.yearly_usd,
+						yearlyEur: master.integrations.stripe.prices.yearly_eur,
+						yearlyBrl: master.integrations.stripe.prices.yearly_brl,
+						yearlyDkk: master.integrations.stripe.prices.yearly_dkk,
+						yearlyInr: master.integrations.stripe.prices.yearly_inr,
+						yearlyIsk: master.integrations.stripe.prices.yearly_isk,
+						yearlyNok: master.integrations.stripe.prices.yearly_nok,
+						yearlyPln: master.integrations.stripe.prices.yearly_pln,
+						yearlySek: master.integrations.stripe.prices.yearly_sek,
+						yearlyTry: master.integrations.stripe.prices.yearly_try,
+						gift1MonthUsd: master.integrations.stripe.prices.gift_1_month_usd,
+						gift1MonthEur: master.integrations.stripe.prices.gift_1_month_eur,
+						gift1MonthSek: master.integrations.stripe.prices.gift_1_month_sek,
+						gift1YearSek: master.integrations.stripe.prices.gift_1_year_sek,
+						gift1MonthDkk: master.integrations.stripe.prices.gift_1_month_dkk,
+						gift1YearDkk: master.integrations.stripe.prices.gift_1_year_dkk,
+						gift1MonthNok: master.integrations.stripe.prices.gift_1_month_nok,
+						gift1YearNok: master.integrations.stripe.prices.gift_1_year_nok,
+						gift1MonthIsk: master.integrations.stripe.prices.gift_1_month_isk,
+						gift1YearIsk: master.integrations.stripe.prices.gift_1_year_isk,
+						gift1MonthBrl: master.integrations.stripe.prices.gift_1_month_brl,
+						gift1MonthInr: master.integrations.stripe.prices.gift_1_month_inr,
+						gift1MonthPln: master.integrations.stripe.prices.gift_1_month_pln,
+						gift1MonthTry: master.integrations.stripe.prices.gift_1_month_try,
+						gift1YearUsd: master.integrations.stripe.prices.gift_1_year_usd,
+						gift1YearEur: master.integrations.stripe.prices.gift_1_year_eur,
+						gift1YearBrl: master.integrations.stripe.prices.gift_1_year_brl,
+						gift1YearInr: master.integrations.stripe.prices.gift_1_year_inr,
+						gift1YearPln: master.integrations.stripe.prices.gift_1_year_pln,
+						gift1YearTry: master.integrations.stripe.prices.gift_1_year_try,
+					}
+				: undefined,
+			legacyPrices: master.integrations.stripe.legacy_prices,
+		},
+		cachePurge: {
+			adapter: master.integrations.cache_purge.adapter,
+			http: {
+				endpoint: master.integrations.cache_purge.http.endpoint,
+				token: master.integrations.cache_purge.http.token,
+				timeoutMs: master.integrations.cache_purge.http.timeout_ms,
+			},
+			controller: {
+				endpoint: master.integrations.cache_purge.controller.endpoint,
+				token: master.integrations.cache_purge.controller.token,
+				timeoutMs: master.integrations.cache_purge.controller.timeout_ms,
+			},
+		},
+		clamav: {
+			enabled: master.integrations.clamav.enabled,
+			host: master.integrations.clamav.host,
+			port: master.integrations.clamav.port,
+			failOpen: master.integrations.clamav.fail_open,
+		},
+		admin: {
+			oauthClientSecret: master.services.admin.oauth_client_secret,
+			sso: {
+				issuer: master.services.admin.sso.issuer,
+				clientId: master.services.admin.sso.client_id,
+			},
+		},
+		auth: {
+			sudoModeSecret: master.auth.sudo_mode_secret,
+			connectionInitiationSecret: master.auth.connection_initiation_secret,
+			profilePseudonymSecret: master.auth.profile_pseudonym_secret,
+			ssoAllowPrivateAddresses: master.auth.sso_allow_private_addresses,
+			passkeys: {
+				rpName: master.auth.passkeys.rp_name,
+				rpId: master.auth.passkeys.rp_id,
+				allowedOrigins: master.auth.passkeys.additional_allowed_origins,
+			},
+			bluesky: master.auth.bluesky as BlueskyOAuthConfig,
+		},
+		klipy: {
+			apiKey: master.integrations.klipy.api_key,
+		},
+		youtube: {
+			apiKey: master.integrations.youtube.api_key,
+		},
+		instance: {
+			selfHosted: master.instance.self_hosted,
+			baseDomain: master.domain.base_domain,
+			autoJoinInviteCode: master.instance.auto_join_invite_code,
+			visionariesGuildId: master.instance.visionaries_guild_id,
+			visionariesGuildVisionaryRoleId: master.instance.visionaries_guild_visionary_role_id,
+			branding: {
+				productName: master.instance.branding.product_name,
+				iconUrl: master.instance.branding.icon_url,
+				symbolUrl: master.instance.branding.symbol_url,
+				logoUrl: master.instance.branding.logo_url,
+				wordmarkUrl: master.instance.branding.wordmark_url,
+				faviconUrl: master.instance.branding.favicon_url,
+				faviconDarkUrl: master.instance.branding.favicon_dark_url,
+				signInBackdropUrl: master.instance.branding.sign_in_backdrop_url,
+				themeColor: master.instance.branding.theme_color,
+				statusPageUrl: master.instance.branding.status_page_url,
+				statusPageIncidentHistoryUrl: master.instance.branding.status_page_incident_history_url,
+			},
+			setup: {
+				configured: master.instance.setup.configured,
+				token: resolveSetupToken(master),
+			},
+			accountIdentity: master.instance.account_identity,
+			tagStyle: master.instance.tag_style,
+			agePolicy: buildAgePolicyConfig(master),
+		},
+		discovery: {
+			enabled: master.discovery.enabled,
+			minMemberCount: master.discovery.min_member_count,
+		},
+		operatorPass: buildOperatorPassConfig(master),
+		paymentDisputes: {
+			closureEffectiveAt: parseOptionalIsoInstant(
+				master.payment_disputes.closure_effective_at,
+				'AFENDOR_PAYMENT_DISPUTE_CLOSURE_EFFECTIVE_AT',
+			),
+		},
+		dev: {
+			relaxRegistrationRateLimits: master.dev.relax_registration_rate_limits,
+			disableRateLimits: master.dev.disable_rate_limits,
+			testModeEnabled: master.dev.test_mode_enabled,
+			testHarnessToken: master.dev.test_harness_token,
+			validateResponses: resolveValidateResponses(master),
+		},
+		presignedAttachmentUploadsEnabled: master.services.api.presigned_attachment_uploads_enabled ?? false,
+		presignedHarvestDownloadsEnabled: master.services.api.presigned_harvest_downloads_enabled ?? true,
+		attachmentDecayEnabled: master.attachment_decay_enabled,
+		deletionGracePeriodHours: master.dev.test_mode_enabled ? 0.01 : master.deletion_grace_period_hours,
+		inactivityDeletionThresholdDays: master.inactivity_deletion_threshold_days,
+		reportRetention: {
+			days: master.report_retention.days,
+			dryRun: master.report_retention.dry_run,
+		},
+		push: {
+			publicVapidKey: master.auth.vapid.public_key,
+		},
+		appStore: {
+			enabled: master.integrations.app_store.enabled,
+			issuerId: master.integrations.app_store.issuer_id,
+			keyId: master.integrations.app_store.key_id,
+			privateKey: master.integrations.app_store.private_key,
+			privateKeyPath: master.integrations.app_store.private_key_path,
+			apps: (master.integrations.app_store.apps ?? []).map((app) => ({
+				bundleId: app.bundle_id,
+				appAppleId: app.app_apple_id,
+			})),
+			products: master.integrations.app_store.products ?? {},
+		},
+		googlePlay: {
+			enabled: master.integrations.google_play.enabled,
+			packages: master.integrations.google_play.packages ?? [],
+			clientEmail: master.integrations.google_play.client_email,
+			privateKey: master.integrations.google_play.private_key,
+			privateKeyPath: master.integrations.google_play.private_key_path,
+			serviceAccountJsonPath: master.integrations.google_play.service_account_json_path,
+			tokenUri: master.integrations.google_play.token_uri ?? 'https://oauth2.googleapis.com/token',
+			products: master.integrations.google_play.products ?? {},
+			pushAudience: master.integrations.google_play.push_audience,
+			pushServiceAccountEmail: master.integrations.google_play.push_service_account_email,
+			selfServiceRefunds: master.integrations.google_play.self_service_refunds,
+		},
+		storeBilling: {
+			sandboxUserIds: master.integrations.store_billing.sandbox_user_ids ?? [],
+			sandboxEntitlesAll: master.integrations.store_billing.sandbox_entitles_all,
+			sandboxSubscriptions: master.integrations.store_billing.sandbox_subscriptions,
+		},
+		worker: {
+			mode: apiWorkerConfig?.mode ?? 'all_lanes',
+			laneName: apiWorkerConfig?.lane,
+			taskName: apiWorkerConfig?.task as WorkerTaskName | undefined,
+			enableCronScheduler: apiWorkerConfig?.enable_cron_scheduler,
+			metricsPort: apiWorkerConfig?.metrics_port,
+			embedded: apiWorkerConfig?.embedded ?? false,
+			laneConcurrencyOverrides: {
+				realtime: apiWorkerConfig?.lane_concurrency_overrides?.realtime,
+				unfurl: apiWorkerConfig?.lane_concurrency_overrides?.unfurl,
+				lifecycle: apiWorkerConfig?.lane_concurrency_overrides?.lifecycle,
+				batch: apiWorkerConfig?.lane_concurrency_overrides?.batch,
+				crosspost: apiWorkerConfig?.lane_concurrency_overrides?.crosspost,
+			},
+		},
+	};
+}
+
+interface APIServerOptions {
+	port: number;
+	headersTimeoutMs: number;
+	requestTimeoutMs: number;
+}
+
+export function buildAPIServerOptions(config: APIConfig): APIServerOptions {
+	return {
+		port: config.port,
+		headersTimeoutMs: config.headersTimeoutMs,
+		requestTimeoutMs: config.requestTimeoutMs,
+	};
+}
+
+let _config: APIConfig | null = null;
+
+export function initializeConfig(config: APIConfig): void {
+	if (_config !== null) {
+		return;
+	}
+	_config = config;
+}
+
+export function getConfig(): APIConfig {
+	if (_config === null) {
+		throw new Error('Config has not been initialized. Call initializeConfig() first.');
+	}
+	return _config;
+}
+
+export const Config: APIConfig = new Proxy({} as APIConfig, {
+	get(_target, prop: keyof APIConfig | symbol) {
+		if (_config === null) {
+			throw new Error('Config has not been initialized. Call initializeConfig() first.');
+		}
+		return _config[prop as keyof APIConfig];
+	},
+	set() {
+		throw new Error('Cannot modify Config directly. Use initializeConfig() instead.');
+	},
+});

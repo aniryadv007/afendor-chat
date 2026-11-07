@@ -1,0 +1,301 @@
+import {isObjectLike as isRecord} from '@fluxer/record_utils/src/RecordGuards';
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import {APIErrorCodes} from '@fluxer/constants/src/ApiErrorCodes';
+import {OAuth2Error} from '@fluxer/errors/src/domains/auth/OAuth2Error';
+import {
+	getApiErrorCodeForStatus,
+	getErrorRecord,
+	hasApiErrorCode,
+	resolveApiErrorCode,
+	resolveErrorData,
+	resolveErrorHeaders,
+	resolveErrorMessage,
+	resolveErrorStatus,
+	resolveMessageVariables,
+} from '@fluxer/errors/src/error_handling/ErrorIntrospection';
+import {createJsonErrorResponse} from '@fluxer/errors/src/error_handling/ErrorResponse';
+import {resolveRoutePattern} from '@fluxer/errors/src/error_handling/RoutePattern';
+import {FluxerError} from '@fluxer/errors/src/FluxerError';
+import {ErrorCodeToI18nKey} from '@fluxer/errors/src/i18n/ErrorCodeMappings';
+import {getErrorMessageUnsafe} from '@fluxer/errors/src/i18n/ErrorI18n';
+import type {ErrorI18nKey} from '@fluxer/errors/src/i18n/ErrorI18nMessages';
+import {parseAcceptLanguage} from '@fluxer/i18n/src/locale/resolution/AcceptLanguageNegotiation';
+import {createLogger} from '@fluxer/logger/src/Logger';
+import type {Context} from 'hono';
+import {HTTPException} from 'hono/http-exception';
+
+interface ErrorI18nService {
+	getMessage(
+		key: string,
+		locale: string | null | undefined,
+		variables?: Record<string, unknown>,
+		fallbackMessage?: string,
+	): string;
+}
+
+export interface BaseHonoEnv {
+	Variables: {
+		errorI18nService?: ErrorI18nService;
+		requestLocale?: string;
+		requestId?: string;
+	};
+}
+
+const logger = createLogger('errors');
+
+interface LocalizedValidationErrorEntry {
+	path: string;
+	code: string;
+	variables?: Record<string, unknown>;
+}
+
+function isLocalizedValidationErrorEntry(value: unknown): value is LocalizedValidationErrorEntry {
+	if (!isRecord(value)) {
+		return false;
+	}
+	const variables = value.variables;
+	return (
+		typeof value.path === 'string' && typeof value.code === 'string' && (variables === undefined || isRecord(variables))
+	);
+}
+
+function getLocalizedValidationErrors(err: unknown): Array<LocalizedValidationErrorEntry> | null {
+	if (!isRecord(err)) {
+		return null;
+	}
+	const errors = err.localizedErrors;
+	if (errors === null || errors === undefined) {
+		return null;
+	}
+	if (!Array.isArray(errors) || !errors.every(isLocalizedValidationErrorEntry)) {
+		return null;
+	}
+	return errors;
+}
+
+function isExpectedError(err: Error): boolean {
+	return 'isExpected' in err && Boolean(err.isExpected);
+}
+
+function getI18nContext<E extends BaseHonoEnv>(
+	ctx: Context<E>,
+): {
+	errorI18nService: ErrorI18nService | undefined;
+	locale: string;
+} {
+	const requestLocale = ctx.get('requestLocale');
+	const locale = requestLocale ?? parseAcceptLanguage(ctx.req.header('accept-language'));
+	return {
+		errorI18nService: ctx.get('errorI18nService'),
+		locale,
+	};
+}
+
+function resolveLocalizedMessageWithoutService(
+	code: string,
+	locale: string,
+	variables: Record<string, unknown> | undefined,
+	fallbackMessage: string | undefined,
+): string {
+	const i18nKey = ErrorCodeToI18nKey[code as keyof typeof ErrorCodeToI18nKey] ?? (code as ErrorI18nKey);
+	return getErrorMessageUnsafe(i18nKey, locale, variables, fallbackMessage);
+}
+
+function resolveLocalizedMessage(
+	errorI18nService: ErrorI18nService | undefined,
+	code: string,
+	locale: string,
+	variables: Record<string, unknown> | undefined,
+	fallbackMessage: string | undefined,
+): string {
+	if (errorI18nService) {
+		return errorI18nService.getMessage(code, locale, variables, fallbackMessage);
+	}
+	return resolveLocalizedMessageWithoutService(code, locale, variables, fallbackMessage);
+}
+
+function handleLocalizedValidationErrors<E extends BaseHonoEnv>(err: unknown, ctx: Context<E>): Response | null {
+	const localizedErrors = getLocalizedValidationErrors(err);
+	if (!localizedErrors) {
+		return null;
+	}
+	try {
+		const {errorI18nService, locale} = getI18nContext(ctx);
+		const resolvedErrors = localizedErrors.map((e) => ({
+			path: e.path,
+			message: resolveLocalizedMessage(errorI18nService, e.code, locale, e.variables, e.code),
+			code: e.code,
+		}));
+		logger.debug({locale, errors: resolvedErrors}, 'Resolved localized validation errors');
+		const localizedMessage = resolveLocalizedMessage(
+			errorI18nService,
+			APIErrorCodes.INVALID_FORM_BODY,
+			locale,
+			undefined,
+			'Input Validation Error',
+		);
+		return createJsonErrorResponse({
+			status: 400,
+			code: APIErrorCodes.INVALID_FORM_BODY,
+			message: localizedMessage,
+			data: {errors: resolvedErrors},
+		});
+	} catch {
+		logger.warn({err}, 'Failed to resolve localized validation errors, falling back to default error response');
+		return null;
+	}
+}
+
+function handleFluxerError<E extends BaseHonoEnv>(err: FluxerError, ctx: Context<E>): Response {
+	const localizedResponse = handleLocalizedValidationErrors(err, ctx);
+	if (localizedResponse) {
+		return localizedResponse;
+	}
+	const {errorI18nService, locale} = getI18nContext(ctx);
+	const resolvedMessage = resolveLocalizedMessage(
+		errorI18nService,
+		err.code,
+		locale,
+		err.messageVariables,
+		err.message,
+	);
+	return createJsonErrorResponse({
+		status: err.status,
+		code: err.code,
+		message: resolvedMessage,
+		data: err.data,
+		headers: err.headers,
+	});
+}
+
+function handleKnownErrorCode<E extends BaseHonoEnv>(err: unknown, errorCode: string, ctx: Context<E>): Response {
+	const {errorI18nService, locale} = getI18nContext(ctx);
+	const resolvedMessage = resolveLocalizedMessage(
+		errorI18nService,
+		errorCode,
+		locale,
+		resolveMessageVariables(err),
+		resolveErrorMessage(err),
+	);
+	const status = resolveErrorStatus(err) ?? (errorCode === APIErrorCodes.GENERAL_ERROR ? 500 : 400);
+	return createJsonErrorResponse({
+		status,
+		code: errorCode,
+		message: resolvedMessage,
+		data: resolveErrorData(err),
+		headers: resolveErrorHeaders(err),
+	});
+}
+
+function handleHTTPException<E extends BaseHonoEnv>(err: HTTPException, ctx: Context<E>): Response {
+	const errorRecord = getErrorRecord(err);
+	if (errorRecord && typeof errorRecord.code === 'string' && hasApiErrorCode(errorRecord.code)) {
+		const {errorI18nService, locale} = getI18nContext(ctx);
+		const resolvedMessage = resolveLocalizedMessage(
+			errorI18nService,
+			errorRecord.code,
+			locale,
+			resolveMessageVariables(err),
+			err.message,
+		);
+		return createJsonErrorResponse({
+			status: err.status,
+			code: errorRecord.code,
+			message: resolvedMessage,
+			data: resolveErrorData(err),
+			headers: resolveErrorHeaders(err),
+		});
+	}
+	const code = getApiErrorCodeForStatus(err.status);
+	const {errorI18nService, locale} = getI18nContext(ctx);
+	const resolvedMessage = resolveLocalizedMessage(errorI18nService, code, locale, undefined, err.message);
+	return createJsonErrorResponse({
+		status: err.status,
+		code,
+		message: resolvedMessage,
+	});
+}
+
+function handleUnexpectedError<E extends BaseHonoEnv>(ctx: Context<E>): Response {
+	const code = APIErrorCodes.INTERNAL_SERVER_ERROR;
+	const {errorI18nService, locale} = getI18nContext(ctx);
+	const resolvedMessage = resolveLocalizedMessage(errorI18nService, code, locale, undefined, undefined);
+	return createJsonErrorResponse({
+		status: 500,
+		code,
+		message: resolvedMessage,
+	});
+}
+
+interface ResolvedErrorResponse {
+	response: Response;
+	unexpected: boolean;
+}
+
+function resolveErrorResponse<E extends BaseHonoEnv>(err: Error, ctx: Context<E>): ResolvedErrorResponse {
+	if (err instanceof OAuth2Error) {
+		return {response: err.getResponse(), unexpected: false};
+	}
+	if (err instanceof FluxerError) {
+		return {response: handleFluxerError(err, ctx), unexpected: false};
+	}
+	const errorCode = resolveApiErrorCode(err);
+	if (errorCode) {
+		return {response: handleKnownErrorCode(err, errorCode, ctx), unexpected: false};
+	}
+	if (err instanceof HTTPException) {
+		return {response: handleHTTPException(err, ctx), unexpected: false};
+	}
+	if (isExpectedError(err)) {
+		return {
+			response: createJsonErrorResponse({
+				status: 400,
+				code: APIErrorCodes.GENERAL_ERROR,
+				message: err.message,
+			}),
+			unexpected: false,
+		};
+	}
+	return {response: handleUnexpectedError(ctx), unexpected: true};
+}
+
+function logErrorResponse<E extends BaseHonoEnv>(err: Error, resolved: ResolvedErrorResponse, ctx: Context<E>): void {
+	const status = resolved.response.status;
+	const details = {
+		err,
+		status,
+		method: ctx.req.method,
+		path: resolveRoutePattern(ctx),
+		requestId: ctx.get('requestId'),
+	};
+	if (resolved.unexpected) {
+		logger.error(details, 'Unhandled error occurred');
+		return;
+	}
+	if (status >= 500) {
+		logger.error(details, 'Request failed');
+		return;
+	}
+	logger.debug(details, 'Request rejected');
+}
+
+export function AppErrorHandler<E extends BaseHonoEnv = BaseHonoEnv>(
+	err: Error,
+	ctx: Context<E>,
+): Response | Promise<Response> {
+	const resolved = resolveErrorResponse(err, ctx);
+	logErrorResponse(err, resolved, ctx);
+	return resolved.response;
+}
+
+export function AppNotFoundHandler<E extends BaseHonoEnv = BaseHonoEnv>(ctx: Context<E>): Response | Promise<Response> {
+	const code = APIErrorCodes.NOT_FOUND;
+	const {errorI18nService, locale} = getI18nContext(ctx);
+	const resolvedMessage = resolveLocalizedMessage(errorI18nService, code, locale, undefined, undefined);
+	return createJsonErrorResponse({
+		status: 404,
+		code,
+		message: resolvedMessage,
+	});
+}

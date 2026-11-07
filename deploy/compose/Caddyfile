@@ -1,0 +1,79 @@
+{
+	servers {
+		trusted_proxies static private_ranges 127.0.0.1/32 172.16.0.0/12
+		trusted_proxies_strict
+		protocols h1 h2
+	}
+	admin off
+}
+
+(upstream) {
+	reverse_proxy {args[0]} {
+		header_up X-Forwarded-For {client_ip}
+		header_up X-Real-IP {client_ip}
+		header_up Host {host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}
+
+:8080 {
+	encode zstd gzip
+
+	handle /_health {
+		respond "OK" 200
+	}
+
+	# API Endpoints
+	handle_path /api/* {
+		import upstream api:8080
+	}
+
+	# Gateway Real-time WebSocket
+	handle /gateway {
+		rewrite * /
+		import upstream gateway:8080
+	}
+
+	handle_path /gateway/* {
+		import upstream gateway:8080
+	}
+
+	# Media Proxy Attachments and Avatars
+	handle_path /media/* {
+		import upstream media-proxy:8080
+	}
+
+	# WebRTC LiveKit Signaling
+	handle_path /livekit/* {
+		import upstream livekit:7880
+	}
+
+	# Admin Dashboard
+	handle /admin {
+		rewrite * /
+		import upstream admin:8080
+	}
+
+	handle_path /admin/* {
+		import upstream admin:8080
+	}
+
+	# Well-Known Discovery Handlers
+	handle /.well-known/afendor {
+		import upstream api:8080
+	}
+
+	handle /.well-known/fluxer {
+		import upstream api:8080
+	}
+
+	handle /.well-known/webfinger {
+		import upstream api:8080
+	}
+
+	# Frontend SPA App Proxy (Default Fallback)
+	handle {
+		import upstream app-proxy:8080
+	}
+}
+

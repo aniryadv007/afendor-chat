@@ -1,0 +1,52 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+.stickerGrid {
+	display: grid;
+	gap: var(--spacing-2);
+	padding: 0 0 0.5rem;
+}
+
+.stickerGridFixedTrack {
+	grid-auto-flow: column;
+	justify-content: start;
+}
+
+.stickerButton {
+	position: relative;
+	display: flex;
+	aspect-ratio: 1;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+	transition:
+		border-radius 0.2s,
+		background-color 0.2s,
+		box-shadow 0.2s,
+		opacity 0.2s;
+	cursor: pointer;
+	border: none;
+	background: transparent;
+	padding: 0;
+	border-radius: 0.5rem;
+}
+
+.stickerButton:hover,
+.stickerButton.selected {
+	border-radius: 1rem;
+	background-color: var(--background-header-secondary);
+	box-shadow: 0 0 0 0.0625rem var(--background-modifier-hover);
+}
+
+.stickerImage {
+	height: 100%;
+	width: 100%;
+	border-radius: 0.25rem;
+	object-fit: contain;
+}
+
+.guildIconSmall {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	--guild-icon-size: 1rem;
+}

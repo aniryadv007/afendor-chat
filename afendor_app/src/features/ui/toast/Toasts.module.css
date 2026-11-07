@@ -1,0 +1,39 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+.container {
+	pointer-events: none;
+	position: fixed;
+	z-index: var(--z-index-toast);
+}
+
+.containerMobile {
+	inset-inline-end: 1rem;
+	inset-inline-start: 1rem;
+	top: max(calc(1rem + env(safe-area-inset-top, 0px)), calc(var(--toast-anchor-bottom, 0px) + 0.75rem));
+	display: flex;
+	justify-content: center;
+}
+
+.containerDesktop {
+	transform: translateX(-50%);
+	top: max(calc(1.5rem + env(safe-area-inset-top, 0px)), calc(var(--toast-anchor-bottom, 0px) + 0.75rem));
+	left: 50%;
+}
+
+:global(html.platform-native #toast-portal-root) .containerDesktop {
+	top: max(
+		calc(1.5rem + env(safe-area-inset-top, 0px) + var(--native-titlebar-height, 0px)),
+		calc(var(--toast-anchor-bottom, 0px) + 0.75rem)
+	);
+}
+
+:global(html.platform-native #toast-portal-root) .containerMobile {
+	top: max(
+		calc(1rem + env(safe-area-inset-top, 0px) + var(--native-titlebar-height, 0px)),
+		calc(var(--toast-anchor-bottom, 0px) + 0.75rem)
+	);
+}
+
+.toastWrapper {
+	pointer-events: auto;
+}

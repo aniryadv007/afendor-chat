@@ -1,0 +1,142 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import {Config} from '@app/api/Config';
+import {Logger} from '@app/api/Logger';
+import {VoiceRepository} from '@app/api/voice/VoiceRepository';
+import {bundledVoiceServerId} from '@app/api/voice/VoiceServerEndpoints';
+
+export function resolveLivekitEndpoint(configuredUrl: string | undefined, apiPublicUrl: string): string {
+	if (configuredUrl) {
+		return configuredUrl;
+	}
+	const apiPublic = new URL(apiPublicUrl);
+	const protocol = apiPublic.protocol === 'https:' ? 'wss' : 'ws';
+	return `${protocol}://${apiPublic.host}/livekit`;
+}
+
+export class VoiceDataInitializer {
+	async initialize(): Promise<void> {
+		if (!Config.voice.enabled || !Config.voice.defaultRegion) {
+			return;
+		}
+		const defaultRegion = Config.voice.defaultRegion;
+		const livekitApiKey = Config.voice.apiKey;
+		const livekitApiSecret = Config.voice.apiSecret;
+		const serverId = bundledVoiceServerId();
+		if (serverId && (!livekitApiKey || !livekitApiSecret)) {
+			Logger.warn('[VoiceDataInitializer] LiveKit API key/secret not configured, cannot create default region');
+			return;
+		}
+		try {
+			const repository = new VoiceRepository();
+			const livekitEndpoint = resolveLivekitEndpoint(Config.voice.url, Config.endpoints.apiPublic);
+			const existingRegions = await repository.listRegions();
+			if (existingRegions.length === 0) {
+				Logger.info('[VoiceDataInitializer] Creating default voice region from config...');
+				await repository.createRegion({
+					id: defaultRegion.id,
+					name: defaultRegion.name,
+					emoji: defaultRegion.emoji,
+					latitude: defaultRegion.latitude,
+					longitude: defaultRegion.longitude,
+					isDefault: true,
+					restrictions: {
+						vipOnly: false,
+						requiredGuildFeatures: new Set(),
+						allowedGuildIds: new Set(),
+						allowedUserIds: new Set(),
+					},
+				});
+				Logger.info(`[VoiceDataInitializer] Created region: ${defaultRegion.name} (${defaultRegion.id})`);
+				if (!serverId || !livekitApiKey || !livekitApiSecret) {
+					Logger.info(
+						'[VoiceDataInitializer] No bundled voice server, add servers with rexctl voice join or in the admin panel',
+					);
+					return;
+				}
+				await repository.createServer({
+					regionId: defaultRegion.id,
+					serverId,
+					endpoint: livekitEndpoint,
+					apiKey: livekitApiKey,
+					apiSecret: livekitApiSecret,
+					latitude: null,
+					longitude: null,
+					isActive: true,
+					softConnectionLimit: null,
+					notes: null,
+					internalEndpoint: null,
+					draining: false,
+					pinnedHostname: null,
+					pinnedSoftLimit: false,
+					publicIpv4: null,
+					publicIpv6: null,
+					restrictions: {
+						vipOnly: false,
+						requiredGuildFeatures: new Set(),
+						allowedGuildIds: new Set(),
+						allowedUserIds: new Set(),
+					},
+				});
+				Logger.info(`[VoiceDataInitializer] Created server: ${serverId} -> ${livekitEndpoint}`);
+				Logger.info('[VoiceDataInitializer] Successfully created default voice region');
+				return;
+			}
+			const configuredRegion = await repository.getRegion(defaultRegion.id);
+			if (!configuredRegion) {
+				Logger.info(
+					`[VoiceDataInitializer] ${existingRegions.length} voice ${existingRegions.length === 1 ? 'region' : 'regions'} already exist and configured default region (${defaultRegion.id}) is absent, skipping config sync`,
+				);
+				return;
+			}
+			if (!serverId || !livekitApiKey || !livekitApiSecret) {
+				await this.removeBundledServer(repository, defaultRegion.id, livekitApiKey);
+				return;
+			}
+			const configuredServer = await repository.getServer(defaultRegion.id, serverId);
+			if (!configuredServer) {
+				Logger.info(
+					`[VoiceDataInitializer] Region ${defaultRegion.id} exists but server ${serverId} is absent, skipping config sync`,
+				);
+				return;
+			}
+			const endpointChanged = configuredServer.endpoint !== livekitEndpoint;
+			const apiKeyChanged = configuredServer.apiKey !== livekitApiKey;
+			const apiSecretChanged = configuredServer.apiSecret !== livekitApiSecret;
+			if (!endpointChanged && !apiKeyChanged && !apiSecretChanged) {
+				Logger.info(`[VoiceDataInitializer] Default voice server ${serverId} already matches config credentials`);
+				return;
+			}
+			if (endpointChanged && apiKeyChanged) {
+				Logger.warn(
+					`[VoiceDataInitializer] Server ${serverId} has another endpoint and API key than the bundled LiveKit, leaving it unchanged`,
+				);
+				return;
+			}
+			await repository.upsertServer({
+				...configuredServer,
+				endpoint: livekitEndpoint,
+				apiKey: livekitApiKey,
+				apiSecret: livekitApiSecret,
+				updatedAt: new Date(),
+			});
+			Logger.info(`[VoiceDataInitializer] Synced default voice server ${serverId} credentials from config`);
+		} catch (error) {
+			Logger.error({error}, '[VoiceDataInitializer] Failed to initialise config-managed voice topology');
+		}
+	}
+
+	private async removeBundledServer(
+		repository: VoiceRepository,
+		regionId: string,
+		bundledApiKey: string | undefined,
+	): Promise<void> {
+		const serverId = `${regionId}-server-1`;
+		const server = await repository.getServer(regionId, serverId);
+		if (!server || !bundledApiKey || server.apiKey !== bundledApiKey) {
+			return;
+		}
+		await repository.deleteServer(regionId, serverId);
+		Logger.info(`[VoiceDataInitializer] Removed ${serverId}, the bundled voice server is turned off`);
+	}
+}

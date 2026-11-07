@@ -1,0 +1,169 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import RuntimeConfig from '@app/features/app/state/RuntimeConfig';
+import styles from '@app/features/channel/components/direct_message/AddFriendForm.module.css';
+import {failureCode, failureMessage} from '@app/features/platform/utils/ResponseInspection';
+import * as RelationshipCommands from '@app/features/relationship/commands/RelationshipCommands';
+import {getSendFriendRequestErrorMessage} from '@app/features/relationship/utils/RelationshipActionUtils';
+import {OUTGOING_FRIEND_REQUEST_STATUS_DESCRIPTOR} from '@app/features/relationship/utils/RelationshipMessageDescriptors';
+import {Button} from '@app/features/ui/button/Button';
+import {Input} from '@app/features/ui/components/form/FormInput';
+import MobileLayout from '@app/features/ui/state/MobileLayout';
+import Users from '@app/features/user/state/Users';
+import {AccountGateSlate} from '@app/features/user/utils/AccountGatePresentation';
+import {canPerform} from '@app/features/user/utils/AccountGates';
+import {TierGatedActions} from '@fluxer/constants/src/AccountTierConstants';
+import {APIErrorCodes} from '@fluxer/constants/src/ApiErrorCodes';
+import {msg} from '@lingui/core/macro';
+import {useLingui} from '@lingui/react/macro';
+import {clsx} from 'clsx';
+import {observer} from 'mobx-react-lite';
+import type React from 'react';
+import {useState} from 'react';
+
+const NO_USER_FOUND_WITH_THAT_USERNAME_DESCRIPTOR = msg({
+	message: 'No user found with that username.',
+	comment: 'Empty-state text in the channel and chat add friend form.',
+});
+const PLEASE_ENTER_A_VALID_USERNAME_DESCRIPTOR = msg({
+	message: 'Enter a valid username ({exampleFluxerTagFull}).',
+	comment:
+		'Description text in the channel and chat add friend form. Preserve {exampleFluxerTagFull}; it is inserted by code.',
+});
+const ENTER_A_VALID_USERNAME_DESCRIPTOR = msg({
+	message: 'Enter a valid username.',
+	comment: 'Error text in the add friend form on instances where people sign in with a username and have no tag.',
+});
+const SEND_REQUEST_DESCRIPTOR = msg({
+	message: 'Send request',
+	comment: 'Button or menu action label in the channel and chat add friend form. Keep it concise.',
+});
+const FRIEND_S_USERNAME_DESCRIPTOR = msg({
+	message: "Friend's username",
+	comment: 'Short label in the channel and chat add friend form. Keep it concise.',
+});
+
+interface AddFriendFormProps {
+	onSuccess?: () => void;
+}
+
+export const AddFriendForm: React.FC<AddFriendFormProps> = observer(({onSuccess}) => {
+	const {i18n} = useLingui();
+	const [input, setInput] = useState('');
+	const [isLoading, setIsLoading] = useState(false);
+	const [resultStatus, setResultStatus] = useState<'success' | 'error' | null>(null);
+	const [errorCode, setErrorCode] = useState<string | null>(null);
+	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+	const usernameOnly = RuntimeConfig.usesUniqueUsernames;
+	const productName = RuntimeConfig.productName;
+	const friendRequestGate = canPerform(Users.currentUser, TierGatedActions.FRIEND_REQUEST);
+	if (!friendRequestGate.allowed) {
+		return (
+			<AccountGateSlate gate={friendRequestGate} data-flx="channel.direct-message.add-friend-form.account-gate-slate" />
+		);
+	}
+	const parseInput = (input: string): [string, string] => {
+		const parts = input['split']('#');
+		if (parts.length > 1) {
+			const discriminator = parts.slice(1).join('#');
+			return [parts[0], usernameOnly && /^0{1,4}$/.test(discriminator) ? '0000' : discriminator];
+		}
+		return [input, '0000'];
+	};
+	const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		setInput(e.target.value);
+		if (resultStatus) {
+			setResultStatus(null);
+			setErrorCode(null);
+			setErrorMessage(null);
+		}
+	};
+	const getErrorMessage = () => {
+		if (!errorCode) {
+			return getSendFriendRequestErrorMessage(i18n, null, null);
+		}
+		if (errorCode === APIErrorCodes.NO_USERS_WITH_FLUXERTAG_EXIST) {
+			return i18n._(NO_USER_FOUND_WITH_THAT_USERNAME_DESCRIPTOR);
+		}
+		if (errorCode === APIErrorCodes.DISCRIMINATOR_REQUIRED) {
+			if (usernameOnly) return i18n._(ENTER_A_VALID_USERNAME_DESCRIPTOR);
+			return i18n._(PLEASE_ENTER_A_VALID_USERNAME_DESCRIPTOR, {exampleFluxerTagFull: `${productName}#0000`});
+		}
+		if (errorCode === APIErrorCodes.NEW_CONVERSATIONS_LIMITED) {
+			return getSendFriendRequestErrorMessage(i18n, errorCode, errorMessage);
+		}
+		return getSendFriendRequestErrorMessage(i18n, errorCode, null);
+	};
+	const handleSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
+		e.preventDefault();
+		const [username, discriminator] = parseInput(input['trim']());
+		if (!username || !discriminator || !/^\d{4}$/.test(discriminator)) {
+			setResultStatus('error');
+			setErrorCode(APIErrorCodes.NO_USERS_WITH_FLUXERTAG_EXIST);
+			setErrorMessage(null);
+			return;
+		}
+		setIsLoading(true);
+		RelationshipCommands.sendFriendRequestByTag(username, discriminator)
+			.then(() => {
+				setIsLoading(false);
+				setResultStatus('success');
+				setInput('');
+				onSuccess?.();
+			})
+			.catch((error: unknown) => {
+				setIsLoading(false);
+				setResultStatus('error');
+				setErrorCode(failureCode(error) ?? null);
+				setErrorMessage(failureMessage(error) ?? null);
+			});
+	};
+	const isDisabled = isLoading || !input['trim']();
+	const isMobile = MobileLayout.isMobileLayout();
+	const submitButton = (
+		<Button
+			type="submit"
+			disabled={isDisabled}
+			submitting={isLoading}
+			className={isMobile ? styles.button : styles.inlineButton}
+			compact={!isMobile}
+			data-flx="channel.direct-message.add-friend-form.button.submit"
+		>
+			{i18n._(SEND_REQUEST_DESCRIPTOR)}
+		</Button>
+	);
+	return (
+		<form onSubmit={handleSubmit} className={styles.form} data-flx="channel.direct-message.add-friend-form.form.submit">
+			<div
+				className={clsx(styles.container, !isMobile && styles.containerDesktop)}
+				data-flx="channel.direct-message.add-friend-form.container"
+			>
+				<Input
+					type="text"
+					value={input}
+					onChange={handleInputChange}
+					placeholder={usernameOnly ? productName : `${productName}#0000`}
+					className={clsx(
+						styles.input,
+						!isMobile && styles.inputDesktop,
+						resultStatus === 'error' && styles.inputError,
+					)}
+					disabled={isLoading}
+					aria-label={i18n._(FRIEND_S_USERNAME_DESCRIPTOR)}
+					rightElement={!isMobile ? submitButton : undefined}
+					data-flx="channel.direct-message.add-friend-form.input.text"
+				/>
+				{isMobile && submitButton}
+			</div>
+			{resultStatus === 'error' && (
+				<p className={styles.errorMessage} data-flx="channel.direct-message.add-friend-form.error-message">
+					{getErrorMessage()}
+				</p>
+			)}
+			{resultStatus === 'success' && (
+				<p className={styles.successMessage} data-flx="channel.direct-message.add-friend-form.success-message">
+					{i18n._(OUTGOING_FRIEND_REQUEST_STATUS_DESCRIPTOR)}
+				</p>
+			)}
+		</form>
+	);
+});

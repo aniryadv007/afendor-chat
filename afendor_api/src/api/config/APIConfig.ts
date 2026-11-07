@@ -1,0 +1,428 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import type {
+	OperatorPassPriceTable,
+	OperatorPassReleaseListTable,
+	OperatorPassWithdrawalCountryTable,
+} from '@app/api/operator_pass/OperatorPassPrices';
+import type {WorkerTaskName} from '@app/api/worker/WorkerLaneConfig';
+import type {CachePurgeAdapterName, StoreProductSlotName, VoiceTurnServerConfig} from '@fluxer/config/src/MasterConfig';
+import type {AccountIdentityMode, TagStyle} from '@fluxer/constants/src/AccountIdentityConstants';
+import type {SmtpTlsMode} from '@fluxer/constants/src/SmtpConstants';
+import type {GeoEntry} from '@fluxer/schema/src/domains/geolocation/GeolocationSchemas';
+import type {OperatorPassCurrency} from '@fluxer/schema/src/domains/operator_pass/OperatorPassSchemas';
+
+export type APIWorkerMode = 'all_lanes' | 'single_lane' | 'single_task';
+export type APIWorkerLaneName = 'realtime' | 'unfurl' | 'lifecycle' | 'batch' | 'crosspost';
+
+export interface AppStoreAppConfig {
+	bundleId: string;
+	appAppleId: number;
+}
+
+export interface AgePolicyConfig {
+	restricted: Array<GeoEntry>;
+}
+
+export interface TrustedCallerConfig {
+	name: string;
+	key: string;
+	buckets: Array<string>;
+}
+
+interface SmtpConfig {
+	host: string;
+	port: number;
+	username: string;
+	password: string;
+	tlsMode: SmtpTlsMode | null;
+}
+
+interface APICachePurgeTarget {
+	endpoint: string;
+	token: string;
+	timeoutMs: number;
+}
+
+export interface OperatorPassConfig {
+	priceRisesAt: Date | null;
+	graceMs: number;
+	clockOffsetMs: number;
+	labsGuildId: bigint | null;
+	labsOperatorRoleId: bigint | null;
+	labsVisionaryRoleId: bigint | null;
+	labsAccessRoleId: bigint | null;
+	labsOperatorsChannelId: bigint | null;
+	standardPricesMinor: OperatorPassPriceTable | null;
+	releaseLists: OperatorPassReleaseListTable;
+	withdrawalCountries: OperatorPassWithdrawalCountryTable;
+	disabledCurrencies: ReadonlySet<OperatorPassCurrency>;
+	wallTierMinimums: ReadonlyArray<number>;
+	maxQuantity: number;
+}
+
+export interface APICachePurgeConfig {
+	adapter: CachePurgeAdapterName;
+	http: APICachePurgeTarget;
+	controller: APICachePurgeTarget;
+}
+
+interface APIGeoipFilesystemConfig {
+	mode: 'filesystem';
+	maxmindDbPath?: string;
+}
+
+interface APIGeoipS3Config {
+	mode: 's3';
+	maxmindDbPath: string;
+	s3Bucket: string;
+	s3Key: string;
+}
+
+type APIGeoipConfig = APIGeoipFilesystemConfig | APIGeoipS3Config;
+
+export interface APIConfig {
+	nodeEnv: 'development' | 'production';
+	port: number;
+	headersTimeoutMs: number;
+	requestTimeoutMs: number;
+	maxInflightRequests: number;
+	maxConcurrentFormUploads: number;
+	automatedMessageDeletionDelayDays: number;
+	ipBanExemptIps: Array<string>;
+	cassandra: {
+		hosts: string;
+		port: number;
+		keyspace: string;
+		localDc: string;
+		username: string;
+		password: string;
+	};
+	postgres: {
+		url: string;
+		host: string;
+		port: number;
+		database: string;
+		username: string;
+		password: string;
+		ssl: boolean;
+		sslCa: string;
+		maxConnections: number;
+		kvTable: string;
+		preparedStatements: boolean;
+	};
+	database: {
+		backend: 'cassandra' | 'postgres';
+	};
+	kv: {
+		url: string;
+		mode: 'standalone' | 'cluster';
+	};
+	nats: {
+		coreUrl: string;
+		jetStreamUrl: string;
+		authToken: string;
+	};
+	storageChangeFeed: {
+		enabled: boolean;
+		stream: string;
+		skipBuckets: Array<string>;
+	};
+	search: {
+		engine: 'elasticsearch' | 'meilisearch' | 'none';
+		url: string;
+		apiKey: string;
+		username: string;
+		password: string;
+		tlsRejectUnauthorized: boolean;
+	};
+	mediaProxy: {
+		host: string;
+		port: number;
+		secretKey: string;
+		uploadRelay: {
+			endpoint: string;
+			relaySecretBase64: string;
+			maxBodyBytes: number;
+			tokenTtlSecs: number;
+			keepDirectCountries: Array<string>;
+		};
+		attachmentUrls: {
+			secretsBase64: Array<string>;
+		};
+	};
+	geoip: APIGeoipConfig;
+	proxy: {
+		trust_client_ip_header: boolean;
+		client_ip_header: string;
+	};
+	endpoints: {
+		apiPublic: string;
+		apiPublicDiscovery: string;
+		apiTransportDiscovery: string | null;
+		apiClient: string;
+		webApp: string;
+		webAppOrigins: Array<string>;
+		gateway: string;
+		media: string;
+		staticCdn: string;
+		marketing: string;
+		admin: string;
+		invite: string;
+		gift: string;
+	};
+	internal: {
+		gatewayRpcAuthToken: string;
+		trustedCallers: Array<TrustedCallerConfig>;
+	};
+	hosts: {
+		marketing: string;
+		unfurlIgnored: Array<string>;
+	};
+	s3: {
+		endpoint: string;
+		presignedUrlBase: string | undefined;
+		forcePathStyle: boolean;
+		region: string;
+		accessKeyId: string;
+		secretAccessKey: string;
+		buckets: {
+			cdn: string;
+			uploads: string;
+			reports: string;
+			harvests: string;
+		};
+	};
+	email: {
+		enabled: boolean;
+		provider: 'smtp' | 'none';
+		webhookSecret?: string;
+		fromEmail: string;
+		fromName: string;
+		replyToEmail: string;
+		supportAlertEmail: string | null;
+		appBaseUrl: string;
+		smtp?: SmtpConfig;
+		fallback?: {
+			domains: Array<string>;
+			smtp: SmtpConfig & {headers?: Record<string, string>};
+		};
+	};
+	blocklistFeeds: {
+		enabled: boolean;
+	};
+	breachedPasswordCheck: {
+		enabled: boolean;
+	};
+	voice: {
+		enabled: boolean;
+		apiKey?: string;
+		apiSecret?: string;
+		url?: string;
+		internalUrl?: string;
+		bundled: boolean;
+		defaultRegion?: {
+			id: string;
+			name: string;
+			emoji: string;
+			latitude: number;
+			longitude: number;
+		};
+		p2pStunUrls?: Array<string>;
+		turnServers: Array<VoiceTurnServerConfig>;
+		joinAllowPrivateEndpoints: boolean;
+		healthIntervalMs: number;
+	};
+	stripe: {
+		enabled: boolean;
+		secretKey?: string;
+		webhookSecret?: string;
+		prices?: {
+			monthlyUsd?: string;
+			monthlyEur?: string;
+			monthlyBrl?: string;
+			monthlyDkk?: string;
+			monthlyInr?: string;
+			monthlyIsk?: string;
+			monthlyNok?: string;
+			monthlyPln?: string;
+			monthlySek?: string;
+			monthlyTry?: string;
+			yearlyUsd?: string;
+			yearlyEur?: string;
+			yearlyBrl?: string;
+			yearlyDkk?: string;
+			yearlyInr?: string;
+			yearlyIsk?: string;
+			yearlyNok?: string;
+			yearlyPln?: string;
+			yearlySek?: string;
+			yearlyTry?: string;
+			gift1MonthUsd?: string;
+			gift1MonthEur?: string;
+			gift1MonthSek?: string;
+			gift1YearSek?: string;
+			gift1MonthDkk?: string;
+			gift1YearDkk?: string;
+			gift1MonthNok?: string;
+			gift1YearNok?: string;
+			gift1MonthIsk?: string;
+			gift1YearIsk?: string;
+			gift1MonthBrl?: string;
+			gift1MonthInr?: string;
+			gift1MonthPln?: string;
+			gift1MonthTry?: string;
+			gift1YearUsd?: string;
+			gift1YearEur?: string;
+			gift1YearBrl?: string;
+			gift1YearInr?: string;
+			gift1YearPln?: string;
+			gift1YearTry?: string;
+		};
+		legacyPrices?: Record<string, Array<string> | undefined>;
+	};
+	cachePurge: APICachePurgeConfig;
+	clamav: {
+		enabled: boolean;
+		host: string;
+		port: number;
+		failOpen: boolean;
+	};
+	admin: {
+		oauthClientSecret?: string;
+		sso: {
+			issuer: string;
+			clientId: string;
+		};
+	};
+	auth: {
+		sudoModeSecret: string;
+		connectionInitiationSecret: string;
+		profilePseudonymSecret: string;
+		ssoAllowPrivateAddresses: boolean;
+		passkeys: {
+			rpName: string;
+			rpId: string;
+			allowedOrigins: Array<string>;
+		};
+		bluesky: BlueskyOAuthConfig;
+	};
+	klipy: {
+		apiKey?: string;
+	};
+	youtube: {
+		apiKey?: string;
+	};
+	instance: {
+		selfHosted: boolean;
+		baseDomain: string;
+		autoJoinInviteCode?: string;
+		visionariesGuildId?: string;
+		visionariesGuildVisionaryRoleId?: string;
+		branding: {
+			productName: string;
+			iconUrl?: string;
+			symbolUrl?: string;
+			logoUrl?: string;
+			wordmarkUrl?: string;
+			faviconUrl?: string;
+			faviconDarkUrl?: string;
+			signInBackdropUrl?: string;
+			themeColor?: string;
+			statusPageUrl?: string;
+			statusPageIncidentHistoryUrl?: string;
+		};
+		setup: {
+			configured: boolean;
+			token: string | null;
+		};
+		accountIdentity: AccountIdentityMode | null;
+		tagStyle: TagStyle | null;
+		agePolicy: AgePolicyConfig;
+	};
+	discovery: {
+		enabled: boolean;
+		minMemberCount: number;
+	};
+	operatorPass: OperatorPassConfig;
+	paymentDisputes: {
+		closureEffectiveAt: Date | null;
+	};
+	dev: {
+		relaxRegistrationRateLimits: boolean;
+		disableRateLimits: boolean;
+		testModeEnabled: boolean;
+		testHarnessToken?: string;
+		validateResponses: boolean;
+	};
+	presignedAttachmentUploadsEnabled: boolean;
+	presignedHarvestDownloadsEnabled: boolean;
+	attachmentDecayEnabled: boolean;
+	deletionGracePeriodHours: number;
+	reportRetention: {
+		days: number;
+		dryRun: boolean;
+	};
+	inactivityDeletionThresholdDays?: number;
+	push: {
+		publicVapidKey?: string;
+	};
+	appStore: {
+		enabled: boolean;
+		issuerId?: string;
+		keyId?: string;
+		privateKey?: string;
+		privateKeyPath?: string;
+		apps: Array<AppStoreAppConfig>;
+		products: Record<string, StoreProductSlotName>;
+	};
+	googlePlay: {
+		enabled: boolean;
+		packages: Array<string>;
+		clientEmail?: string;
+		privateKey?: string;
+		privateKeyPath?: string;
+		serviceAccountJsonPath?: string;
+		tokenUri: string;
+		products: Record<string, StoreProductSlotName>;
+		pushAudience?: string;
+		pushServiceAccountEmail?: string;
+		selfServiceRefunds: boolean;
+	};
+	storeBilling: {
+		sandboxUserIds: Array<string>;
+		sandboxEntitlesAll: boolean;
+		sandboxSubscriptions: boolean;
+	};
+	worker: {
+		mode: APIWorkerMode;
+		laneName?: APIWorkerLaneName;
+		taskName?: WorkerTaskName;
+		enableCronScheduler?: boolean;
+		metricsPort?: number;
+		embedded: boolean;
+		laneConcurrencyOverrides: {
+			realtime?: number;
+			unfurl?: number;
+			lifecycle?: number;
+			batch?: number;
+			crosspost?: number;
+		};
+	};
+}
+
+export interface BlueskyOAuthKeyConfig {
+	kid: string;
+	private_key?: string;
+	private_key_path?: string;
+}
+
+export interface BlueskyOAuthConfig {
+	enabled: boolean;
+	client_name: string;
+	client_uri: string;
+	logo_uri: string;
+	tos_uri: string;
+	policy_uri: string;
+	keys: Array<BlueskyOAuthKeyConfig>;
+}

@@ -1,0 +1,434 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import {AdminAuditReadActions} from '@app/api/admin/AdminAuditActions';
+import {recordAdminRead} from '@app/api/admin/AdminAuditRecorder';
+import {requireAdminACL} from '@app/api/middleware/AdminMiddleware';
+import {RateLimitMiddleware} from '@app/api/middleware/RateLimitMiddleware';
+import {OpenAPI} from '@app/api/middleware/ResponseTypeMiddleware';
+import {RateLimitConfigs} from '@app/api/RateLimitConfig';
+import type {HonoApp, HonoEnv} from '@app/api/types/HonoEnv';
+import {Validator} from '@app/api/Validator';
+import {AdminACLs} from '@fluxer/constants/src/AdminACLs';
+import {isRecord} from '@fluxer/record_utils/src/RecordGuards';
+import {
+	CreateVoiceJoinTokenRequest,
+	CreateVoiceJoinTokenResponse,
+	CreateVoiceRegionRequest,
+	CreateVoiceRegionResponse,
+	CreateVoiceServerRequest,
+	CreateVoiceServerRequestBody,
+	CreateVoiceServerResponse,
+	CreateVoiceServerTestTokenResponse,
+	DeleteVoiceResponse,
+	GetVoiceRegionQuery,
+	GetVoiceRegionResponse,
+	GetVoiceServerResponse,
+	ListVoiceJoinTokensResponse,
+	ListVoiceRegionsQuery,
+	ListVoiceRegionsResponse,
+	ListVoiceServersResponse,
+	UpdateVoiceRegionRequest,
+	UpdateVoiceRegionRequestBody,
+	UpdateVoiceRegionResponse,
+	UpdateVoiceServerRequest,
+	UpdateVoiceServerRequestBody,
+	UpdateVoiceServerResponse,
+	VoiceJoinTokenIdParam,
+	VoiceRegionIdParam,
+	VoiceServerIdParam,
+} from '@fluxer/schema/src/domains/admin/AdminVoiceSchemas';
+import type {Context} from 'hono';
+
+export function VoiceAdminController(app: HonoApp) {
+	app.get(
+		'/admin/voice/regions',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_LOOKUP),
+		requireAdminACL(AdminACLs.VOICE_REGION_LIST),
+		Validator('query', ListVoiceRegionsQuery),
+		OpenAPI({
+			operationId: 'list_admin_voice_regions',
+			summary: 'List voice regions',
+			responseSchema: ListVoiceRegionsResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Lists all configured voice server regions with status and server count. Shows region names, latency info, and availability. Requires VOICE_REGION_LIST permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			const query = ctx.req.valid('query');
+			const response = await adminService.voiceService.listVoiceRegions(query);
+			await recordAdminRead(ctx, {
+				targetType: 'voice_region',
+				targetId: 0n,
+				action: AdminAuditReadActions.LIST_VOICE_REGIONS,
+				metadata: {include_servers: query.include_servers, result_count: response.regions.length},
+			});
+			return ctx.json(response);
+		},
+	);
+	app.post(
+		'/admin/voice/regions',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_GUILD_MODIFY),
+		requireAdminACL(AdminACLs.VOICE_REGION_CREATE),
+		Validator('json', CreateVoiceRegionRequest),
+		OpenAPI({
+			operationId: 'create_admin_voice_region',
+			summary: 'Create voice region',
+			responseSchema: CreateVoiceRegionResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Creates a new voice server region. Defines geographic location and performance characteristics for voice routing. Creates audit log entry. Requires VOICE_REGION_CREATE permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			const adminUserId = ctx.get('adminUserId');
+			const auditLogReason = ctx.get('auditLogReason');
+			return ctx.json(
+				await adminService.voiceService.createVoiceRegion(ctx.req.valid('json'), adminUserId, auditLogReason),
+			);
+		},
+	);
+	app.get(
+		'/admin/voice/regions/:region_id',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_LOOKUP),
+		requireAdminACL(AdminACLs.VOICE_REGION_LIST),
+		Validator('param', VoiceRegionIdParam),
+		Validator('query', GetVoiceRegionQuery),
+		OpenAPI({
+			operationId: 'get_admin_voice_region',
+			summary: 'Get voice region',
+			responseSchema: GetVoiceRegionResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Gets detailed information about a voice region including assigned servers, capacity, and server details. Requires VOICE_REGION_LIST permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			const {region_id} = ctx.req.valid('param');
+			const {include_servers} = ctx.req.valid('query');
+			const response = await adminService.voiceService.getVoiceRegion({id: region_id, include_servers});
+			await recordAdminRead(ctx, {
+				targetType: 'voice_region',
+				targetId: 0n,
+				action: AdminAuditReadActions.GET_VOICE_REGION,
+				metadata: {region_id, include_servers, found: response.region !== null},
+			});
+			return ctx.json(response);
+		},
+	);
+	app.patch(
+		'/admin/voice/regions/:region_id',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_GUILD_MODIFY),
+		requireAdminACL(AdminACLs.VOICE_REGION_UPDATE),
+		Validator('param', VoiceRegionIdParam),
+		Validator('json', UpdateVoiceRegionRequest, {
+			pre: (value: unknown, ctx: Context<HonoEnv>) => ({
+				...(isRecord(value) ? value : {}),
+				id: ctx.req.param('region_id'),
+			}),
+		}),
+		OpenAPI({
+			operationId: 'update_admin_voice_region',
+			summary: 'Update voice region',
+			requestSchema: UpdateVoiceRegionRequestBody,
+			responseSchema: UpdateVoiceRegionResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Updates voice region settings such as latency thresholds or priority. Changes affect voice routing for new sessions. Creates audit log entry. Requires VOICE_REGION_UPDATE permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			const adminUserId = ctx.get('adminUserId');
+			const auditLogReason = ctx.get('auditLogReason');
+			return ctx.json(
+				await adminService.voiceService.updateVoiceRegion(ctx.req.valid('json'), adminUserId, auditLogReason),
+			);
+		},
+	);
+	app.delete(
+		'/admin/voice/regions/:region_id',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_GUILD_MODIFY),
+		requireAdminACL(AdminACLs.VOICE_REGION_DELETE),
+		Validator('param', VoiceRegionIdParam),
+		OpenAPI({
+			operationId: 'delete_admin_voice_region',
+			summary: 'Delete voice region',
+			responseSchema: DeleteVoiceResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Deletes a voice region. Removes region from routing and reassigns active connections. Creates audit log entry. Requires VOICE_REGION_DELETE permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			const adminUserId = ctx.get('adminUserId');
+			const auditLogReason = ctx.get('auditLogReason');
+			return ctx.json(
+				await adminService.voiceService.deleteVoiceRegion(
+					{id: ctx.req.valid('param').region_id},
+					adminUserId,
+					auditLogReason,
+				),
+			);
+		},
+	);
+	app.get(
+		'/admin/voice/regions/:region_id/servers',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_LOOKUP),
+		requireAdminACL(AdminACLs.VOICE_SERVER_LIST),
+		Validator('param', VoiceRegionIdParam),
+		OpenAPI({
+			operationId: 'list_admin_voice_servers',
+			summary: 'List voice servers',
+			responseSchema: ListVoiceServersResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Lists all voice servers in a region with connection counts and capacity. Shows server status, region assignment, and load information. Requires VOICE_SERVER_LIST permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			const {region_id} = ctx.req.valid('param');
+			const response = await adminService.voiceService.listVoiceServers({region_id});
+			await recordAdminRead(ctx, {
+				targetType: 'voice_server',
+				targetId: 0n,
+				action: AdminAuditReadActions.LIST_VOICE_SERVERS,
+				metadata: {region_id, result_count: response.servers.length},
+			});
+			return ctx.json(response);
+		},
+	);
+	app.post(
+		'/admin/voice/regions/:region_id/servers',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_GUILD_MODIFY),
+		requireAdminACL(AdminACLs.VOICE_SERVER_CREATE),
+		Validator('param', VoiceRegionIdParam),
+		Validator('json', CreateVoiceServerRequest, {
+			pre: (value: unknown, ctx: Context<HonoEnv>) => ({
+				...(isRecord(value) ? value : {}),
+				region_id: ctx.req.param('region_id'),
+			}),
+		}),
+		OpenAPI({
+			operationId: 'create_admin_voice_server',
+			summary: 'Create voice server',
+			requestSchema: CreateVoiceServerRequestBody,
+			responseSchema: CreateVoiceServerResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Creates and provisions a new voice server instance in a region. Configures capacity, codecs, and encryption. Creates audit log entry. Requires VOICE_SERVER_CREATE permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			const adminUserId = ctx.get('adminUserId');
+			const auditLogReason = ctx.get('auditLogReason');
+			return ctx.json(
+				await adminService.voiceService.createVoiceServer(ctx.req.valid('json'), adminUserId, auditLogReason),
+			);
+		},
+	);
+	app.get(
+		'/admin/voice/regions/:region_id/servers/:server_id',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_LOOKUP),
+		requireAdminACL(AdminACLs.VOICE_SERVER_LIST),
+		Validator('param', VoiceServerIdParam),
+		OpenAPI({
+			operationId: 'get_admin_voice_server',
+			summary: 'Get voice server',
+			responseSchema: GetVoiceServerResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Gets detailed voice server information including active connections and configuration. Requires VOICE_SERVER_LIST permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			const {region_id, server_id} = ctx.req.valid('param');
+			const response = await adminService.voiceService.getVoiceServer({region_id, server_id});
+			await recordAdminRead(ctx, {
+				targetType: 'voice_server',
+				targetId: 0n,
+				action: AdminAuditReadActions.GET_VOICE_SERVER,
+				metadata: {region_id, server_id, found: response.server !== null},
+			});
+			return ctx.json(response);
+		},
+	);
+	app.patch(
+		'/admin/voice/regions/:region_id/servers/:server_id',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_GUILD_MODIFY),
+		requireAdminACL(AdminACLs.VOICE_SERVER_UPDATE),
+		Validator('param', VoiceServerIdParam),
+		Validator('json', UpdateVoiceServerRequest, {
+			pre: (value: unknown, ctx: Context<HonoEnv>) => ({
+				...(isRecord(value) ? value : {}),
+				region_id: ctx.req.param('region_id'),
+				server_id: ctx.req.param('server_id'),
+			}),
+		}),
+		OpenAPI({
+			operationId: 'update_admin_voice_server',
+			summary: 'Update voice server',
+			requestSchema: UpdateVoiceServerRequestBody,
+			responseSchema: UpdateVoiceServerResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Updates voice server configuration including capacity, region assignment, and quality settings. Changes apply to new connections. Creates audit log entry. Requires VOICE_SERVER_UPDATE permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			const adminUserId = ctx.get('adminUserId');
+			const auditLogReason = ctx.get('auditLogReason');
+			return ctx.json(
+				await adminService.voiceService.updateVoiceServer(ctx.req.valid('json'), adminUserId, auditLogReason),
+			);
+		},
+	);
+	app.delete(
+		'/admin/voice/regions/:region_id/servers/:server_id',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_GUILD_MODIFY),
+		requireAdminACL(AdminACLs.VOICE_SERVER_DELETE),
+		Validator('param', VoiceServerIdParam),
+		OpenAPI({
+			operationId: 'delete_admin_voice_server',
+			summary: 'Delete voice server',
+			responseSchema: DeleteVoiceResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Decommissions and removes a voice server instance. Disconnects active sessions and migrates to other servers. Creates audit log entry. Requires VOICE_SERVER_DELETE permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			const adminUserId = ctx.get('adminUserId');
+			const auditLogReason = ctx.get('auditLogReason');
+			const {region_id, server_id} = ctx.req.valid('param');
+			return ctx.json(
+				await adminService.voiceService.deleteVoiceServer({region_id, server_id}, adminUserId, auditLogReason),
+			);
+		},
+	);
+	app.post(
+		'/admin/voice/regions/:region_id/servers/:server_id/test-token',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_GUILD_MODIFY),
+		requireAdminACL(AdminACLs.VOICE_SERVER_UPDATE),
+		Validator('param', VoiceServerIdParam),
+		OpenAPI({
+			operationId: 'create_admin_voice_server_test_token',
+			summary: 'Create a voice server test token',
+			responseSchema: CreateVoiceServerTestTokenResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Signs a 60 second LiveKit token for a hidden, audio only participant in a throwaway room on one server, for a connection test from outside its network. Fluxer ignores webhooks for these rooms. Creates audit log entry. Requires VOICE_SERVER_UPDATE permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			const {region_id, server_id} = ctx.req.valid('param');
+			return ctx.json(
+				await adminService.voiceService.createServerTestToken(
+					{region_id, server_id},
+					ctx.get('adminUserId'),
+					ctx.get('auditLogReason'),
+				),
+			);
+		},
+	);
+	app.post(
+		'/admin/voice/join-tokens',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_GUILD_MODIFY),
+		requireAdminACL(AdminACLs.VOICE_JOIN_TOKEN_CREATE),
+		Validator('json', CreateVoiceJoinTokenRequest),
+		OpenAPI({
+			operationId: 'create_admin_voice_join_token',
+			summary: 'Create a voice join token',
+			requestSchema: CreateVoiceJoinTokenRequest,
+			responseSchema: CreateVoiceJoinTokenResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Creates a single use token that lets one machine register one voice server. The token appears in this response only. Creates audit log entry. Requires VOICE_JOIN_TOKEN_CREATE permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			return ctx.json(
+				await adminService.voiceService.createJoinToken(
+					ctx.req.valid('json'),
+					ctx.get('adminUserId'),
+					ctx.get('auditLogReason'),
+				),
+			);
+		},
+	);
+	app.get(
+		'/admin/voice/join-tokens',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_LOOKUP),
+		requireAdminACL(AdminACLs.VOICE_JOIN_TOKEN_LIST),
+		OpenAPI({
+			operationId: 'list_admin_voice_join_tokens',
+			summary: 'List voice join tokens',
+			responseSchema: ListVoiceJoinTokensResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Lists voice join tokens from the last 7 days with their status, without the token values. Requires VOICE_JOIN_TOKEN_LIST permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			const response = await adminService.voiceService.listJoinTokens();
+			await recordAdminRead(ctx, {
+				targetType: 'voice_join_token',
+				targetId: 0n,
+				action: AdminAuditReadActions.LIST_VOICE_JOIN_TOKENS,
+				metadata: {result_count: response.tokens.length},
+			});
+			return ctx.json(response);
+		},
+	);
+	app.delete(
+		'/admin/voice/join-tokens/:token_id',
+		RateLimitMiddleware(RateLimitConfigs.ADMIN_GUILD_MODIFY),
+		requireAdminACL(AdminACLs.VOICE_JOIN_TOKEN_REVOKE),
+		Validator('param', VoiceJoinTokenIdParam),
+		OpenAPI({
+			operationId: 'revoke_admin_voice_join_token',
+			summary: 'Revoke a voice join token',
+			responseSchema: DeleteVoiceResponse,
+			statusCode: 200,
+			security: 'adminApiKey',
+			tags: 'Admin',
+			description:
+				'Stops a pending voice join token from working. Creates audit log entry. Requires VOICE_JOIN_TOKEN_REVOKE permission.',
+		}),
+		async (ctx) => {
+			const adminService = ctx.get('adminService');
+			return ctx.json(
+				await adminService.voiceService.revokeJoinToken(
+					ctx.req.valid('param').token_id,
+					ctx.get('adminUserId'),
+					ctx.get('auditLogReason'),
+				),
+			);
+		},
+	);
+}

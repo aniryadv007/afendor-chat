@@ -1,0 +1,651 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import {
+	RTC_REGION_ID_MAX_LENGTH,
+	RTC_REGION_ID_MIN_LENGTH,
+	VOICE_P2P_MAX_PARTICIPANTS,
+} from '@fluxer/constants/src/LimitConstants';
+import {FORUM_UNREAD_COUNT_CAP, FORUM_UNREADS_MAX_THREADS} from '@fluxer/constants/src/ThreadConstants';
+import {AccountTierSchema} from '@fluxer/schema/src/domains/account/AccountTierSchemas';
+import {ChannelThreadsConfigResponse} from '@fluxer/schema/src/domains/admin/ChannelThreadsSchemas';
+import {GatewayRolloutConfigResponse} from '@fluxer/schema/src/domains/admin/GatewayRolloutSchemas';
+import {LegacyPushServiceDeliveryWire} from '@fluxer/schema/src/domains/admin/PushRelaySchemas';
+import {WebAuthnCredentialResponse} from '@fluxer/schema/src/domains/auth/AuthSchemas';
+import {ChannelResponse, RtcRegionResponse} from '@fluxer/schema/src/domains/channel/ChannelSchemas';
+import {
+	ThreadMemberRpcResponse,
+	ThreadParentSettingsRpcResponse,
+} from '@fluxer/schema/src/domains/channel/ThreadSchemas';
+import {VoiceStateResponse} from '@fluxer/schema/src/domains/gateway/GatewaySchemas';
+import {GuildEmojiResponse, GuildStickerResponse} from '@fluxer/schema/src/domains/guild/GuildEmojiSchemas';
+import {GuildMemberResponse} from '@fluxer/schema/src/domains/guild/GuildMemberSchemas';
+import {GuildResponse} from '@fluxer/schema/src/domains/guild/GuildResponseSchemas';
+import {GuildRoleResponse} from '@fluxer/schema/src/domains/guild/GuildRoleSchemas';
+import {FavoriteMemeResponse} from '@fluxer/schema/src/domains/meme/MemeSchemas';
+import {CustomStatusPayload} from '@fluxer/schema/src/domains/user/UserRequestSchemas';
+import {
+	CustomStatusResponse,
+	RelationshipResponse,
+	UserGuildSettingsResponse,
+	UserPrivateResponse,
+	UserSettingsResponse,
+} from '@fluxer/schema/src/domains/user/UserResponseSchemas';
+import {
+	createStringType,
+	SnowflakeStringType,
+	SnowflakeType,
+	UnsignedInt64StringType,
+} from '@fluxer/schema/src/primitives/SchemaPrimitives';
+import {z} from 'zod';
+
+const RPC_USER_BATCH_MAX = 1000;
+
+export const RpcGuildCollectionType = z.enum([
+	'guild',
+	'roles',
+	'channels',
+	'emojis',
+	'stickers',
+	'members',
+	'voice_states',
+]);
+
+export type RpcGuildCollectionType = z.infer<typeof RpcGuildCollectionType>;
+
+const ReadStateResponse = z.object({
+	id: SnowflakeStringType.describe('The channel ID for this read state'),
+	mention_count: z.number().describe('Number of unread mentions in the channel'),
+	last_message_id: SnowflakeStringType.nullish().describe('ID of the last read message'),
+	last_pin_timestamp: z.string().nullish().describe('Timestamp of the last pinned message'),
+	version: UnsignedInt64StringType.optional().describe('Read-state version for ordering updates as a decimal uint64'),
+	flags: z.number().int().min(0).optional().describe('Server-stamped read state flags'),
+});
+
+const RPC_THREAD_MEMBERS_PAGE_MAX = 1000;
+const RPC_THREAD_MEMBERS_THREADS_MAX = 100;
+
+const ThreadGateRpcResponse = z.object({
+	active: z.boolean().describe('Whether the channel threads experiment is active for the guild'),
+	config_version: z.number().int().min(0).describe('Channel threads config version this decision was made on'),
+});
+
+export const RpcRequest = z.discriminatedUnion('type', [
+	z.object({
+		type: z.literal('session').describe('Request type for session initialization'),
+		token: createStringType().describe('Authentication token for the session'),
+		version: z.literal(1).describe('RPC protocol version'),
+		ip: createStringType(1, 45).optional().describe('Client IP address'),
+		latitude: createStringType(1, 32).optional().describe('Client latitude for region selection'),
+		longitude: createStringType(1, 32).optional().describe('Client longitude for region selection'),
+		thread_channels_capable: z.boolean().optional().describe('Whether the session can handle thread channels'),
+		guild_visits_capable: z.boolean().optional().describe('Whether the session can visit guilds without joining'),
+	}),
+	z.object({
+		type: z.literal('guild_collection').describe('Request type for fetching a single guild collection chunk'),
+		guild_id: SnowflakeType.describe('ID of the guild to fetch'),
+		collection: RpcGuildCollectionType.describe('Guild collection to fetch'),
+		limit: z.number().int().min(1).max(1000).optional().describe('Maximum number of items to return'),
+		after_user_id: SnowflakeType.optional().describe('Cursor for member collection pagination'),
+	}),
+	z.object({
+		type: z.literal('voice_state_upsert').describe('Request type for persisting a guild voice state snapshot'),
+		guild_id: SnowflakeType.describe('ID of the guild for this voice state'),
+		voice_state: VoiceStateResponse.describe('Voice state payload to persist'),
+	}),
+	z.object({
+		type: z.literal('voice_state_remove').describe('Request type for deleting a guild voice state snapshot'),
+		guild_id: SnowflakeType.describe('ID of the guild for this voice state'),
+		connection_id: createStringType(1, 255).describe('Connection ID to remove from the snapshot'),
+	}),
+	z.object({
+		type: z.literal('get_user_guild_settings').describe('Request type for fetching user guild settings'),
+		user_ids: z.array(SnowflakeType).max(RPC_USER_BATCH_MAX).describe('IDs of users to fetch settings for'),
+		guild_id: SnowflakeType.describe('ID of the guild'),
+	}),
+	z.object({
+		type: z.literal('get_push_subscriptions').describe('Request type for fetching push notification subscriptions'),
+		user_ids: z.array(SnowflakeType).describe('IDs of users to fetch subscriptions for'),
+	}),
+	z.object({
+		type: z.literal('get_badge_counts').describe('Request type for fetching notification badge counts'),
+		user_ids: z.array(SnowflakeType).describe('IDs of users to fetch badge counts for'),
+	}),
+	z.object({
+		type: z.literal('delete_push_subscriptions').describe('Request type for deleting push notification subscriptions'),
+		subscriptions: z
+			.array(
+				z.object({
+					user_id: SnowflakeType.describe('ID of the user'),
+					subscription_id: createStringType().describe('ID of the subscription to delete'),
+				}),
+			)
+			.describe('List of subscriptions to delete'),
+	}),
+	z.object({
+		type: z.literal('get_user_blocked_ids').describe('Request type for fetching blocked user IDs'),
+		user_ids: z.array(SnowflakeType).max(RPC_USER_BATCH_MAX).describe('IDs of users to fetch blocked lists for'),
+	}),
+	z.object({
+		type: z
+			.literal('get_users_adult_content_allowed')
+			.describe('Request type for checking which users may see 18+ content'),
+		user_ids: z.array(SnowflakeType).max(RPC_USER_BATCH_MAX).describe('IDs of users to check'),
+	}),
+	z.object({
+		type: z.literal('voice_get_token').describe('Request type for getting voice connection token'),
+		guild_id: SnowflakeType.optional().describe('ID of the guild for the voice channel'),
+		channel_id: SnowflakeType.describe('ID of the voice channel'),
+		user_id: SnowflakeType.describe('ID of the user joining voice'),
+		connection_id: createStringType().optional().describe('Existing connection ID for reconnection'),
+		rtc_region: createStringType(RTC_REGION_ID_MIN_LENGTH, RTC_REGION_ID_MAX_LENGTH)
+			.optional()
+			.describe(
+				`Preferred voice region for the connection (${RTC_REGION_ID_MIN_LENGTH}-${RTC_REGION_ID_MAX_LENGTH} characters)`,
+			),
+		latitude: createStringType(1, 32).optional().describe('Client latitude for region selection'),
+		longitude: createStringType(1, 32).optional().describe('Client longitude for region selection'),
+		can_speak: z.boolean().optional().describe('Whether the user can speak in the channel'),
+		can_stream: z.boolean().optional().describe('Whether the user can stream in the channel'),
+		can_video: z.boolean().optional().describe('Whether the user can use video in the channel'),
+		token_nonce: createStringType(1, 64).optional().describe('Token nonce for replay prevention'),
+		p2p: z.boolean().optional().describe('Whether the gateway asks for a peer-to-peer grant for this connection'),
+		p2p_initiator: z.boolean().optional().describe('Whether this connection would start the peer-to-peer call'),
+		p2p_participant_count: z
+			.number()
+			.int()
+			.min(1)
+			.max(VOICE_P2P_MAX_PARTICIPANTS)
+			.optional()
+			.describe('Peer-to-peer participants in the channel or call once this connection joins'),
+		country_code: z
+			.string()
+			.regex(/^[A-Z]{2}$/u)
+			.optional()
+			.describe('ISO 3166-1 alpha-2 country code of the session, omitted when unknown'),
+	}),
+	z.object({
+		type: z.literal('kick_temporary_member').describe('Request type for kicking temporary guild members'),
+		user_id: SnowflakeType.describe('ID of the user to kick'),
+		guild_ids: z.array(SnowflakeType).describe('IDs of guilds to kick the user from'),
+	}),
+	z.object({
+		type: z
+			.literal('voice_force_disconnect_participant')
+			.describe('Request type for force disconnecting a voice participant'),
+		guild_id: SnowflakeType.optional().describe('ID of the guild'),
+		channel_id: SnowflakeType.describe('ID of the voice channel'),
+		user_id: SnowflakeType.describe('ID of the user to disconnect'),
+		connection_id: createStringType().describe('Connection ID of the user'),
+	}),
+	z.object({
+		type: z.literal('voice_update_participant').describe('Request type for updating voice participant state'),
+		guild_id: SnowflakeType.optional().describe('ID of the guild'),
+		channel_id: SnowflakeType.describe('ID of the voice channel'),
+		user_id: SnowflakeType.describe('ID of the user to update'),
+		mute: z.boolean().describe('Whether the user is muted'),
+		deaf: z.boolean().describe('Whether the user is deafened'),
+		can_speak: z.boolean().optional().describe('Whether the user can speak'),
+		can_stream: z.boolean().optional().describe('Whether the user can stream'),
+		can_video: z.boolean().optional().describe('Whether the user can use video'),
+	}),
+	z.object({
+		type: z
+			.literal('voice_update_participant_permissions')
+			.describe('Request type for updating voice participant permissions'),
+		guild_id: SnowflakeType.optional().describe('ID of the guild'),
+		channel_id: SnowflakeType.describe('ID of the voice channel'),
+		user_id: SnowflakeType.describe('ID of the user to update'),
+		connection_id: createStringType().describe('Connection ID of the user'),
+		can_speak: z.boolean().describe('Whether the user can speak'),
+		can_stream: z.boolean().describe('Whether the user can stream'),
+		can_video: z.boolean().describe('Whether the user can use video'),
+		deaf: z.boolean().optional().describe('Whether the user is deafened'),
+	}),
+	z.object({
+		type: z.literal('call_ended').describe('Request type for notifying that a call has ended'),
+		channel_id: SnowflakeType.describe('ID of the channel where the call ended'),
+		message_id: SnowflakeType.describe('ID of the call start message'),
+		participants: z.array(SnowflakeType).describe('IDs of users who participated in the call'),
+		ended_timestamp: z.number().describe('Unix timestamp when the call ended'),
+	}),
+	z.object({
+		type: z.literal('get_dm_channel').describe('Request type for fetching a DM channel'),
+		channel_id: SnowflakeType.describe('ID of the DM channel'),
+		user_id: SnowflakeType.describe('ID of the user requesting the channel'),
+	}),
+	z.object({
+		type: z.literal('get_read_state').describe('Request type for fetching the read state of one channel'),
+		user_id: SnowflakeType.describe('ID of the user who owns the read state'),
+		channel_id: SnowflakeType.describe('ID of the channel'),
+	}),
+	z.object({
+		type: z.literal('validate_custom_status').describe('Request type for validating a custom status'),
+		user_id: SnowflakeType.describe('ID of the user'),
+		custom_status: CustomStatusPayload.nullish().describe('Custom status data to validate'),
+	}),
+	z.object({
+		type: z.literal('get_gateway_rollout_config').describe('Request type for fetching gateway rollout configuration'),
+	}),
+	z.object({
+		type: z
+			.literal('get_push_service_delivery_config')
+			.describe('Request type for fetching push service delivery configuration'),
+	}),
+	z.object({
+		type: z.literal('get_channel_threads_config').describe('Request type for fetching channel threads configuration'),
+	}),
+	z.object({
+		type: z.literal('list_thread_members').describe('Request type for listing the members of a thread'),
+		guild_id: SnowflakeType.describe('ID of the guild'),
+		thread_ids: z
+			.array(SnowflakeType)
+			.min(1)
+			.max(RPC_THREAD_MEMBERS_THREADS_MAX)
+			.describe('IDs of the threads, walked in order'),
+		limit: z.number().int().min(1).max(RPC_THREAD_MEMBERS_PAGE_MAX).optional().describe('Maximum members to return'),
+		after_user_id: SnowflakeType.optional().describe('Member cursor within the first thread'),
+	}),
+	z.object({
+		type: z.literal('forum_unreads').describe('Request type for counting unread messages in forum posts'),
+		guild_id: SnowflakeType.describe('ID of the guild'),
+		channel_id: SnowflakeType.describe('ID of the forum or media channel'),
+		user_id: SnowflakeType.describe('ID of the requesting user'),
+		threads: z
+			.array(
+				z.object({
+					thread_id: SnowflakeType.describe('ID of the post'),
+					ack_message_id: SnowflakeType.optional().describe('Last message the user has read in the post'),
+				}),
+			)
+			.min(1)
+			.max(FORUM_UNREADS_MAX_THREADS)
+			.describe('Posts to count'),
+	}),
+	z.object({
+		type: z.literal('guild_thread_flip_data').describe('Request type for re-evaluating the thread gate of a guild'),
+		guild_id: SnowflakeType.describe('ID of the guild'),
+		config_version: z.number().int().min(0).describe('Channel threads config version known to the gateway'),
+		paged_members: z
+			.boolean()
+			.optional()
+			.describe('Omit thread members so the gateway pages them through list_thread_members'),
+	}),
+]);
+
+export type RpcRequest = z.infer<typeof RpcRequest>;
+
+const GuildReadyResponse = z.object({
+	id: SnowflakeStringType.describe('Guild ID for the gateway to hydrate from its in-memory guild state'),
+});
+
+export interface RpcTimingNode {
+	duration_us: number;
+	count?: number;
+	min_us?: number;
+	max_us?: number;
+	steps?: Record<string, RpcTimingNode>;
+}
+
+export const RpcTimingNode: z.ZodType<RpcTimingNode> = z.lazy(() =>
+	z.object({
+		duration_us: z.number().int().min(0).describe('Elapsed time in microseconds'),
+		count: z.number().int().min(1).optional().describe('Number of repeated operations aggregated into this node'),
+		min_us: z.number().int().min(0).optional().describe('Shortest aggregated operation duration in microseconds'),
+		max_us: z.number().int().min(0).optional().describe('Longest aggregated operation duration in microseconds'),
+		steps: z.record(z.string(), RpcTimingNode).optional().describe('Nested timings keyed by measured step name'),
+	}),
+);
+
+const RpcTimingRuntimeNode = z.object({
+	operation: z.string().optional().describe('Logical operation or routing target that touched this runtime node'),
+	pod_name: z.string().optional().describe('Kubernetes pod name for this runtime node'),
+});
+
+type RpcTimingRuntimeNode = z.infer<typeof RpcTimingRuntimeNode>;
+
+interface RpcTimingTraceSpan {
+	name: string;
+	duration_us: number;
+	remote?: RpcTimingRuntimeNode;
+	children?: Array<RpcTimingTraceSpan>;
+}
+
+const RpcTimingTraceSpan: z.ZodType<RpcTimingTraceSpan> = z.lazy(() =>
+	z.object({
+		name: z.string().describe('Function or operation name measured by this span'),
+		duration_us: z.number().int().min(0).describe('Elapsed time in microseconds'),
+		remote: RpcTimingRuntimeNode.optional().describe('Remote runtime hit by this span, when applicable'),
+		children: z.array(RpcTimingTraceSpan).optional().describe('Nested spans in call order'),
+	}),
+);
+
+export const RpcSessionTimings = z.object({
+	unit: z.literal('microseconds').describe('Timing unit for every duration in this object'),
+	total_us: z.number().int().min(0).describe('Total session initialization duration in microseconds'),
+	pod_name: z.string().optional().describe('Kubernetes pod name for the runtime that produced these timings'),
+	nodes: z.array(RpcTimingRuntimeNode).optional().describe('Runtime nodes hit while producing these timings'),
+	trace: z.array(RpcTimingTraceSpan).optional().describe('Ordered function trace for gateway-side timings'),
+	steps: z
+		.record(z.string(), RpcTimingNode)
+		.optional()
+		.describe('Session initialization timings keyed by measured step name'),
+});
+
+export type RpcSessionTimings = z.infer<typeof RpcSessionTimings>;
+
+export const RpcResponseSessionData = z.object({
+	_timings: RpcSessionTimings.optional().describe(
+		'Structured server-side timings for this session initialization, sent to staff sessions only',
+	),
+	_timings_gw: RpcSessionTimings.optional().describe(
+		'Structured gateway-side timings for this session initialization, sent to staff sessions only',
+	),
+	auth_session_id_hash: z.string().nullish().describe('Hash of the authentication session ID'),
+	user: UserPrivateResponse.describe('Private user data for the authenticated user'),
+	user_settings: UserSettingsResponse.nullish().describe('User settings configuration'),
+	user_guild_settings: z.array(UserGuildSettingsResponse).describe('Per-guild settings for the user'),
+	notes: z.record(SnowflakeStringType, z.string()).describe('User notes keyed by user ID'),
+	read_states: z.array(ReadStateResponse).describe('Read state for each channel'),
+	private_channels: z.array(ChannelResponse).describe('List of DM and group DM channels'),
+	relationships: z.array(RelationshipResponse).describe('User relationships (friends, blocked, etc.)'),
+	favorite_memes: z.array(FavoriteMemeResponse).describe('List of user favorite memes'),
+	guilds: z.array(GuildReadyResponse).describe('Guilds the user is a member of'),
+	pinned_dms: z.array(SnowflakeStringType).describe('IDs of pinned DM channels'),
+	country_code: z.string().describe('Two-letter country code from IP geolocation'),
+	geoip_country_code: z
+		.string()
+		.nullable()
+		.describe('Two-letter country code from IP geolocation, null when the lookup found none'),
+	latitude: createStringType(1, 32).optional().describe('Latitude from IP geolocation'),
+	longitude: createStringType(1, 32).optional().describe('Longitude from IP geolocation'),
+	rtc_regions: z.array(RtcRegionResponse).describe('Available voice server regions'),
+	webauthn_credentials: z
+		.array(WebAuthnCredentialResponse)
+		.describe('Registered WebAuthn credentials (passkeys) for the authenticated user'),
+	version: z.number().int().describe('Session data version for cache invalidation'),
+	visit_guild_ids: z
+		.array(SnowflakeStringType)
+		.optional()
+		.describe('Guilds the user is visiting, only for sessions that can visit guilds'),
+	operator_visit_guild_ids: z
+		.array(SnowflakeStringType)
+		.optional()
+		.describe('Subset of visit_guild_ids opened by the instance operator entry, which ignore the guild visit setting'),
+	adult_content_allowed: z.boolean().optional().describe('Whether the user may see adult channels while visiting'),
+	account_tier: AccountTierSchema.optional().describe('Account tier of the user'),
+	ip_key: z.string().nullish().describe('Address key of the identifying connection, used to evict visitors on IP bans'),
+});
+
+export type RpcResponseSessionData = z.infer<typeof RpcResponseSessionData>;
+
+export const RpcResponseGuildCollectionData = z.object({
+	collection: RpcGuildCollectionType.describe('Guild collection returned in this response'),
+	guild: GuildResponse.nullish().describe('Guild information'),
+	roles: z.array(GuildRoleResponse).nullish().describe('List of roles in the guild'),
+	channels: z.array(ChannelResponse).nullish().describe('List of channels in the guild'),
+	emojis: z.array(GuildEmojiResponse).nullish().describe('List of custom emojis in the guild'),
+	stickers: z.array(GuildStickerResponse).nullish().describe('List of custom stickers in the guild'),
+	members: z.array(GuildMemberResponse).nullish().describe('List of guild members in this chunk'),
+	voice_states: z.array(VoiceStateResponse).nullish().describe('List of guild voice states in this chunk'),
+	thread_gate: ThreadGateRpcResponse.optional().describe('Channel threads gate decision for the guild'),
+	thread_tainted: z.boolean().optional().describe('Whether the guild has ever held thread data'),
+	thread_only_channels: z
+		.array(ChannelResponse)
+		.optional()
+		.describe('Forum and media channels of the guild, merged into channels when active'),
+	has_more: z.boolean().describe('Whether more data is available for this collection'),
+	next_after_user_id: SnowflakeStringType.nullish().describe('Cursor for the next member chunk'),
+});
+
+export type RpcResponseGuildCollectionData = z.infer<typeof RpcResponseGuildCollectionData>;
+
+const RpcResponseValidateCustomStatus = z.object({
+	custom_status: CustomStatusResponse.nullish().describe('Validated custom status or null if invalid'),
+});
+
+export const RpcResponse = z.discriminatedUnion('type', [
+	z.object({
+		type: z.literal('session').describe('Response type for session initialization'),
+		data: RpcResponseSessionData.describe('Session initialization data'),
+	}),
+	z.object({
+		type: z.literal('guild_collection').describe('Response type for guild collection chunks'),
+		data: RpcResponseGuildCollectionData.describe('Guild collection chunk data'),
+	}),
+	z.object({
+		type: z.literal('voice_state_upsert').describe('Response type for voice state persistence upsert'),
+		data: z.object({success: z.boolean().describe('Whether the voice state was persisted')}),
+	}),
+	z.object({
+		type: z.literal('voice_state_remove').describe('Response type for voice state persistence removal'),
+		data: z.object({success: z.boolean().describe('Whether the voice state was removed')}),
+	}),
+	z.object({
+		type: z.literal('get_user_guild_settings').describe('Response type for user guild settings'),
+		data: z
+			.object({
+				user_guild_settings: z
+					.array(UserGuildSettingsResponse.nullable())
+					.describe('Guild settings for each requested user'),
+			})
+			.describe('User guild settings data'),
+	}),
+	z.object({
+		type: z.literal('get_push_subscriptions').describe('Response type for push subscriptions'),
+		data: z
+			.record(
+				SnowflakeStringType,
+				z.array(
+					z.object({
+						subscription_id: z.string().describe('Unique identifier for the subscription'),
+						endpoint: z.string().describe('Push notification endpoint URL'),
+						p256dh_key: z.string().nullable().describe('P-256 Diffie-Hellman public key'),
+						auth_key: z.string().nullable().describe('Authentication secret key'),
+						platform: z.string().describe('Push provider platform for this subscription'),
+						app_id: z.string().nullable().describe('Client app channel or bundle mapping identifier'),
+						provider_environment: z.string().nullable().describe('Push provider environment'),
+						thread_channels: z
+							.literal(true)
+							.optional()
+							.describe('Present when the subscribing client can open thread channels from a push'),
+					}),
+				),
+			)
+			.describe('Push subscriptions keyed by user ID'),
+	}),
+	z.object({
+		type: z.literal('delete_push_subscriptions').describe('Response type for push subscription deletion'),
+		data: z.object({success: z.boolean().describe('Whether the deletion was successful')}).describe('Deletion result'),
+	}),
+	z.object({
+		type: z.literal('get_user_blocked_ids').describe('Response type for blocked user IDs'),
+		data: z.record(SnowflakeStringType, z.array(SnowflakeStringType)).describe('Blocked user IDs keyed by user ID'),
+	}),
+	z.object({
+		type: z.literal('get_users_adult_content_allowed').describe('Response type for the 18+ content check'),
+		data: z
+			.object({user_ids: z.array(SnowflakeStringType).describe('IDs of the requested users who may see 18+ content')})
+			.describe('Users who may see 18+ content'),
+	}),
+	z.object({
+		type: z.literal('voice_get_token').describe('Response type for voice connection token'),
+		data: z
+			.union([
+				z.object({
+					token: z.string().describe('Voice server authentication token'),
+					endpoint: z.string().describe('Voice server endpoint URL'),
+					connectionId: z.string().describe('Unique connection identifier'),
+					tokenNonce: z.string().describe('Token nonce for webhook confirmation'),
+					regionId: createStringType(1, 64).optional().describe('Voice region selected for the connection'),
+					serverId: createStringType(1, 128).optional().describe('Voice server selected for the connection'),
+				}),
+				z.object({
+					p2p: z.literal(true).describe('Marks a peer-to-peer grant'),
+					connectionId: z.string().describe('Unique connection identifier'),
+					iceServers: z
+						.array(z.object({urls: z.array(z.string()).describe('STUN URLs of the server')}))
+						.describe('ICE servers the connection uses for its peer connections'),
+					maxParticipants: z
+						.number()
+						.int()
+						.min(1)
+						.max(VOICE_P2P_MAX_PARTICIPANTS)
+						.describe('Configured peer-to-peer participant cap the call enforces on this join'),
+				}),
+				z.object({
+					p2p: z.literal(false).describe('Marks a declined peer-to-peer request'),
+					declineReason: z
+						.literal('channel_full')
+						.describe('The join would take the call past the configured peer-to-peer participant cap'),
+				}),
+			])
+			.describe('Voice connection credentials'),
+	}),
+	z.object({
+		type: z.literal('kick_temporary_member').describe('Response type for temporary member kick'),
+		data: z
+			.object({
+				success: z.boolean().describe('Whether the kick was successful'),
+			})
+			.describe('Kick result'),
+	}),
+	z.object({
+		type: z.literal('get_badge_counts').describe('Response type for badge counts'),
+		data: z
+			.object({
+				badge_counts: z.record(SnowflakeStringType, z.number().int().min(0)).describe('Badge counts keyed by user ID'),
+			})
+			.describe('Badge count data'),
+	}),
+	z.object({
+		type: z.literal('voice_force_disconnect_participant').describe('Response type for force disconnect participant'),
+		data: z
+			.object({
+				success: z.boolean().describe('Whether the disconnect was successful'),
+			})
+			.describe('Disconnect result'),
+	}),
+	z.object({
+		type: z.literal('voice_update_participant').describe('Response type for voice participant update'),
+		data: z
+			.object({
+				success: z.boolean().describe('Whether the update was successful'),
+			})
+			.describe('Update result'),
+	}),
+	z.object({
+		type: z.literal('voice_update_participant_permissions').describe('Response type for voice permissions update'),
+		data: z
+			.object({
+				success: z.boolean().describe('Whether the permissions update was successful'),
+			})
+			.describe('Permissions update result'),
+	}),
+	z.object({
+		type: z.literal('call_ended').describe('Response type for call ended notification'),
+		data: z
+			.object({
+				success: z.boolean().describe('Whether the notification was processed successfully'),
+			})
+			.describe('Call ended result'),
+	}),
+	z.object({
+		type: z.literal('validate_custom_status').describe('Response type for custom status validation'),
+		data: RpcResponseValidateCustomStatus.describe('Custom status validation result'),
+	}),
+	z.object({
+		type: z.literal('get_dm_channel').describe('Response type for DM channel fetch'),
+		data: z
+			.object({
+				channel: ChannelResponse.nullish().describe('The DM channel or null if not found'),
+			})
+			.describe('DM channel result'),
+	}),
+	z.object({
+		type: z.literal('get_read_state').describe('Response type for a channel read state'),
+		data: z
+			.object({
+				last_message_id: SnowflakeStringType.nullable().describe('ID of the last read message, or null if none'),
+			})
+			.describe('Channel read state result'),
+	}),
+	z.object({
+		type: z.literal('get_gateway_rollout_config').describe('Response type for gateway rollout configuration'),
+		data: z
+			.object({
+				config: GatewayRolloutConfigResponse.describe('Gateway rollout configuration'),
+			})
+			.describe('Gateway rollout config result'),
+	}),
+	z.object({
+		type: z
+			.literal('get_push_service_delivery_config')
+			.describe('Response type for push service delivery configuration'),
+		data: z
+			.object({
+				config: LegacyPushServiceDeliveryWire.describe('Push service delivery configuration'),
+			})
+			.describe('Push service delivery config result'),
+	}),
+	z.object({
+		type: z.literal('get_channel_threads_config').describe('Response type for channel threads configuration'),
+		data: z
+			.object({
+				config: ChannelThreadsConfigResponse.describe('Channel threads configuration'),
+			})
+			.describe('Channel threads config result'),
+	}),
+	z.object({
+		type: z.literal('list_thread_members').describe('Response type for a page of thread members'),
+		data: z
+			.object({
+				members: z.array(ThreadMemberRpcResponse).describe('Thread members in this page'),
+				has_more: z.boolean().describe('Whether more members are available'),
+				next_thread_id: SnowflakeStringType.nullish().describe('Thread the next page starts in'),
+				next_after_user_id: SnowflakeStringType.nullish().describe('Member cursor within that thread'),
+			})
+			.describe('Thread members result'),
+	}),
+	z.object({
+		type: z.literal('forum_unreads').describe('Response type for forum post unread counts'),
+		data: z
+			.object({
+				threads: z
+					.array(
+						z.object({
+							thread_id: SnowflakeStringType.describe('ID of the post'),
+							count: z
+								.number()
+								.int()
+								.min(0)
+								.max(FORUM_UNREAD_COUNT_CAP)
+								.optional()
+								.describe('Unread messages after the acknowledged message, capped'),
+							missing: z.boolean().optional().describe('Whether the post has no acknowledged message'),
+						}),
+					)
+					.describe('Unread counts of the posts that belong to the channel'),
+			})
+			.describe('Forum unreads result'),
+	}),
+	z.object({
+		type: z.literal('guild_thread_flip_data').describe('Response type for a thread gate re-evaluation'),
+		data: z
+			.object({
+				config_version: z.number().int().min(0).describe('Channel threads config version the api evaluated'),
+				thread_gate: ThreadGateRpcResponse.describe('Channel threads gate decision for the guild'),
+				thread_tainted: z.boolean().describe('Whether the guild has ever held thread data'),
+				channels: z.array(ChannelResponse).describe('Guild channels, including forums when active'),
+				roles: z.array(GuildRoleResponse).describe('Guild roles'),
+				threads: z.array(ChannelResponse).optional().describe('Active threads when active'),
+				thread_members: z.array(ThreadMemberRpcResponse).optional().describe('Active thread members when active'),
+				thread_parent_settings: z
+					.array(ThreadParentSettingsRpcResponse)
+					.optional()
+					.describe('Thread settings of parents when active'),
+			})
+			.describe('Thread gate re-evaluation result'),
+	}),
+]);
+
+export type RpcResponse = z.infer<typeof RpcResponse>;

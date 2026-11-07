@@ -1,0 +1,11 @@
+apiVersion: v2
+name: afendor
+description: A complete Afendor Chat instance on Kubernetes.
+type: application
+version: 0.1.0
+appVersion: "v1"
+kubeVersion: ">=1.29.0-0"
+home: https://afendor.cc
+keywords:
+  - afendor
+  - chat

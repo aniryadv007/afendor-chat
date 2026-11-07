@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# ==============================================================================
+# AFENDOR CHAT - MODE B (EXTERNAL S3 / BACKBLAZE B2 STORAGE PROFILE)
+# Apply with: docker compose -f docker-compose.yml -f docker-compose.s3.yml up -d
+# ==============================================================================
+
+services:
+  # Disable bundled SeaweedFS services
+  seaweedfs:
+    profiles:
+      - disabled-bundled-storage
+    restart: "no"
+
+  seaweedfs-init:
+    profiles:
+      - disabled-bundled-storage
+    restart: "no"
+

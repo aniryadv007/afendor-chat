@@ -1,0 +1,384 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+use crate::{
+    acl,
+    api::{
+        client::AdminApiClient,
+        generated::types::{BulkModerationBasis, MessageDeletionBasis},
+    },
+    middleware::{
+        auth::AuthContext,
+        flash::{self, FlashData},
+    },
+    state::AppState,
+    templates::{
+        components::enforcement_fields::{bulk_decision_from_form, can_take_action},
+        pages::messages_page::MessageActions,
+    },
+    utils::forms::MultiValueForm,
+};
+use axum::{
+    extract::{Query, Request, State},
+    http::StatusCode,
+    response::{Html, IntoResponse, Redirect, Response},
+};
+use serde::Deserialize;
+
+use super::ActionQuery;
+
+#[derive(Deserialize)]
+pub(crate) struct BrowseFragmentQuery {
+    channel_id: Option<String>,
+    before: Option<String>,
+    after: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ArchiveDownloadQuery {
+    subject_type: Option<String>,
+    subject_id: Option<String>,
+    archive_id: Option<String>,
+}
+
+pub(crate) async fn messages_post(
+    State(state): State<AppState>,
+    auth: axum::Extension<AuthContext>,
+    Query(aq): Query<ActionQuery>,
+    request: Request,
+) -> Response {
+    let config = state.config();
+    let base = &config.base_path;
+    let form = match MultiValueForm::from_request(request).await {
+        Some(form) => form,
+        None => {
+            return flash::redirect_error(config, &format!("{base}/messages"), "Invalid form data");
+        }
+    };
+    let client = AdminApiClient::new(state.http_client(), config, &auth.0.session);
+    let action = aq.action.as_deref().unwrap_or("");
+    let channel_id = form.clean("channel_id");
+    let message_id = form.clean("message_id");
+    match action {
+        "lookup" => {
+            let context_limit = parse_context_limit(form.first("context_limit"));
+            Redirect::to(&format!(
+                "{base}/messages?channel_id={}&message_id={}&context_limit={context_limit}",
+                encode_opt(&channel_id),
+                encode_opt(&message_id)
+            ))
+            .into_response()
+        }
+        "lookup-by-attachment" => {
+            let attachment_id = form.clean("attachment_id");
+            let filename = form.clean("filename");
+            let context_limit = parse_context_limit(form.first("context_limit"));
+            Redirect::to(&format!(
+                "{base}/messages?channel_id={}&attachment_id={}&filename={}&context_limit={context_limit}",
+                encode_opt(&channel_id),
+                encode_opt(&attachment_id),
+                encode_opt(&filename)
+            ))
+            .into_response()
+        }
+        "browse" => Redirect::to(&format!(
+            "{base}/messages?channel_id={}",
+            encode_opt(&channel_id)
+        ))
+        .into_response(),
+        "search" => {
+            let search = form.clean("search");
+            Redirect::to(&format!(
+                "{base}/messages?channel_id={}&search={}",
+                encode_opt(&channel_id),
+                encode_opt(&search)
+            ))
+            .into_response()
+        }
+        "delete" => {
+            let back = format!("{base}/messages?channel_id={}", encode_opt(&channel_id));
+            let basis = form
+                .first("basis")
+                .and_then(|value| MessageDeletionBasis::try_from(value).ok());
+            let flash = match (&channel_id, &message_id, basis) {
+                (Some(cid), Some(mid), Some(basis)) => {
+                    let internal_note = form.clean("internal_note");
+                    match client
+                        .delete_message(cid, mid, basis, internal_note.as_deref())
+                        .await
+                    {
+                        Ok(()) => FlashData::success("Message deleted"),
+                        Err(error) => {
+                            tracing::warn!(%error, "admin API request failed: delete message");
+                            FlashData::error(error.detail_message().map_or_else(
+                                || "Failed to delete the message".to_owned(),
+                                |message| format!("Failed to delete the message: {message}"),
+                            ))
+                        }
+                    }
+                }
+                (Some(_), Some(_), None) => FlashData::error("Choose a basis"),
+                _ => FlashData::error("Enter the channel ID and message ID"),
+            };
+            flash::redirect_with_flash(&back, flash, config.secure_cookies())
+        }
+        _ => Redirect::to(&format!("{base}/messages")).into_response(),
+    }
+}
+
+pub(crate) async fn system_dms_post(
+    State(state): State<AppState>,
+    auth: axum::Extension<AuthContext>,
+    request: Request,
+) -> Response {
+    let config = state.config();
+    let base = &config.base_path;
+    let form = match MultiValueForm::from_request(request).await {
+        Some(form) => form,
+        None => {
+            return flash::redirect_error(
+                config,
+                &format!("{base}/system-dms"),
+                "Invalid form data",
+            );
+        }
+    };
+    let client = AdminApiClient::new(state.http_client(), config, &auth.0.session);
+    let user_ids = form.list_values_any(&["user_ids[]", "user_ids"]);
+    let content = form.clean("content");
+    let flash = if let Some(content) = content.as_deref()
+        && !user_ids.is_empty()
+    {
+        let recipients = (user_ids != ["*"]).then_some(user_ids.as_slice());
+        match client.send_system_dm(recipients, content).await {
+            Ok(_) => FlashData::success("System DM sent"),
+            Err(error) => {
+                tracing::warn!(%error, "admin API request failed: send system DM");
+                FlashData::error(error.detail_message().map_or_else(
+                    || "Failed to send system DM".to_owned(),
+                    |message| format!("Failed to send system DM: {message}"),
+                ))
+            }
+        }
+    } else {
+        FlashData::error("Recipients and content are required")
+    };
+    flash::redirect_with_flash(
+        &format!("{base}/system-dms"),
+        flash,
+        config.secure_cookies(),
+    )
+}
+
+fn bulk_basis(form: &MultiValueForm) -> Result<BulkModerationBasis, String> {
+    match form.first("basis") {
+        Some("enforcement") => bulk_decision_from_form(form).map(BulkModerationBasis::Enforcement),
+        Some("holder_request") => Ok(BulkModerationBasis::HolderRequest),
+        Some("housekeeping") => Ok(BulkModerationBasis::Housekeeping),
+        _ => Err("Choose a basis".to_owned()),
+    }
+}
+
+pub(crate) async fn bulk_actions_post(
+    State(state): State<AppState>,
+    auth: axum::Extension<AuthContext>,
+    Query(aq): Query<ActionQuery>,
+    request: Request,
+) -> Response {
+    let config = state.config();
+    let base = &config.base_path;
+    let back = format!("{base}/bulk-actions");
+    let form = match MultiValueForm::from_request(request).await {
+        Some(form) => form,
+        None => {
+            return flash::redirect_error(config, &back, "Invalid form data");
+        }
+    };
+    let client = AdminApiClient::new(state.http_client(), config, &auth.0.session);
+    let action = aq.action.as_deref().unwrap_or("");
+    let audit_log_reason = form.clean("audit_log_reason");
+    let result = match action {
+        "bulk-update-user-flags" => {
+            let user_ids = form.list_values_any(&["user_ids[]", "user_ids"]);
+            let add = form.list_values_any(&["add_flags[]", "add_flags"]);
+            let remove = form.list_values_any(&["remove_flags[]", "remove_flags"]);
+            client
+                .bulk_update_user_flags(&user_ids, &add, &remove, audit_log_reason.as_deref())
+                .await
+        }
+        "bulk-update-guild-features" => {
+            let guild_ids = form.list_values_any(&["guild_ids[]", "guild_ids"]);
+            let mut add = form.list_values_any(&["add_features[]", "add_features"]);
+            add.extend(form.list_values_any(&["custom_add_features"]));
+            let mut remove = form.list_values_any(&["remove_features[]", "remove_features"]);
+            remove.extend(form.list_values_any(&["custom_remove_features"]));
+            client
+                .bulk_update_guild_features(&guild_ids, &add, &remove, audit_log_reason.as_deref())
+                .await
+        }
+        "bulk-add-guild-members" => {
+            let guild_id = form.clean("guild_id").unwrap_or_default();
+            let user_ids = form.list_values_any(&["user_ids[]", "user_ids"]);
+            client
+                .bulk_add_guild_members(&guild_id, &user_ids, audit_log_reason.as_deref())
+                .await
+        }
+        "bulk-schedule-user-deletion" => {
+            let user_ids = form.list_values_any(&["user_ids[]", "user_ids"]);
+            let basis = match bulk_basis(&form) {
+                Ok(basis) => basis,
+                Err(message) => return flash::redirect_error(config, &back, message),
+            };
+            let Ok(Some(days)) = form.parse_value::<u32>("days_until_deletion") else {
+                return flash::redirect_error(config, &back, "Enter the days until deletion");
+            };
+            client
+                .bulk_schedule_user_deletion(
+                    &user_ids,
+                    days,
+                    basis,
+                    form.clean("internal_note").as_deref(),
+                )
+                .await
+        }
+        "bulk-delete-user-messages" => {
+            let user_ids = form.list_values_any(&["user_ids[]", "user_ids"]);
+            let basis = match bulk_basis(&form) {
+                Ok(basis) => basis,
+                Err(message) => return flash::redirect_error(config, &back, message),
+            };
+            client
+                .bulk_delete_user_messages(&user_ids, basis, form.clean("internal_note").as_deref())
+                .await
+        }
+        _ => {
+            return flash::redirect_error(config, &back, "Unknown bulk action");
+        }
+    };
+    match result {
+        Ok(response) => {
+            if let Some(job_id) = response.job_id.filter(|job_id| !job_id.is_empty()) {
+                Redirect::to(&format!("{base}/jobs/{job_id}")).into_response()
+            } else {
+                flash::redirect_with_flash(
+                    &back,
+                    FlashData::success("Bulk action submitted"),
+                    config.secure_cookies(),
+                )
+            }
+        }
+        Err(error) => {
+            tracing::warn!(%error, action, "admin API request failed: submit bulk action");
+            flash::redirect_error(
+                config,
+                &back,
+                format!("Failed to submit bulk action: {error}"),
+            )
+        }
+    }
+}
+
+pub(crate) async fn messages_browse_fragment(
+    State(state): State<AppState>,
+    auth: axum::Extension<AuthContext>,
+    Query(query): Query<BrowseFragmentQuery>,
+) -> Response {
+    let empty_fragment = || {
+        Html(
+            r#"<div data-browse-fragment="" data-has-more="false" data-message-count="0"></div>"#
+                .to_string(),
+        )
+        .into_response()
+    };
+    let channel_id = match query.channel_id.as_deref().filter(|s| !s.is_empty()) {
+        Some(id) => id,
+        None => return empty_fragment(),
+    };
+    let config = state.config();
+    let admin_acls = auth.0.acls();
+    let can_delete = acl::has_permission(admin_acls, acl::MESSAGE_DELETE);
+    let client = AdminApiClient::new(state.http_client(), config, &auth.0.session);
+    let result = client
+        .browse_channel(
+            channel_id,
+            query.before.as_deref(),
+            query.after.as_deref(),
+            None,
+        )
+        .await;
+    match result {
+        Ok(resp) => {
+            let markup = crate::templates::pages::messages_page::browse_messages_fragment(
+                config,
+                &resp.data,
+                MessageActions {
+                    delete: can_delete,
+                    take_action: can_take_action(admin_acls),
+                },
+                None,
+            );
+            Html(markup.into_string()).into_response()
+        }
+        Err(error) => {
+            tracing::warn!(%error, channel_id, "admin API request failed: browse messages fragment");
+            (
+                StatusCode::BAD_GATEWAY,
+                Html(
+                    r#"<div data-browse-fragment="" data-has-more="false" data-message-count="0"></div>"#
+                        .to_string(),
+                ),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub(super) fn parse_context_limit(value: Option<&str>) -> u32 {
+    value
+        .and_then(|s| s.parse::<u32>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(50)
+        .min(100)
+}
+
+fn encode_opt(value: &Option<String>) -> String {
+    urlencoding::encode(value.as_deref().unwrap_or("")).into_owned()
+}
+
+pub(crate) async fn archives_download(
+    State(state): State<AppState>,
+    auth: axum::Extension<AuthContext>,
+    Query(query): Query<ArchiveDownloadQuery>,
+) -> Response {
+    let config = state.config();
+    let base = &config.base_path;
+    let (subject_type, subject_id, archive_id) = match (
+        query.subject_type.as_deref().filter(|s| !s.is_empty()),
+        query.subject_id.as_deref().filter(|s| !s.is_empty()),
+        query.archive_id.as_deref().filter(|s| !s.is_empty()),
+    ) {
+        (Some(st), Some(si), Some(ai)) => (st, si, ai),
+        _ => return Redirect::to(&format!("{base}/archives")).into_response(),
+    };
+    let client = AdminApiClient::new(state.http_client(), config, &auth.0.session);
+    match client
+        .get_archive_download_url(subject_type, subject_id, archive_id)
+        .await
+    {
+        Ok(resp) if !resp.download_url.is_empty() => {
+            Redirect::temporary(&resp.download_url).into_response()
+        }
+        Ok(_) => flash::redirect_error(
+            config,
+            &format!("{base}/archives"),
+            "Archive download URL was empty",
+        ),
+        Err(error) => {
+            tracing::warn!(%error, "admin API request failed: get archive download URL");
+            flash::redirect_error(
+                config,
+                &format!("{base}/archives"),
+                "Failed to create archive download URL",
+            )
+        }
+    }
+}

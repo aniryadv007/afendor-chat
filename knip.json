@@ -1,0 +1,87 @@
+{
+	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"include": ["files", "exports", "types", "dependencies", "unlisted", "binaries", "catalog"],
+	"ignoreExportsUsedInFile": true,
+	"ignoreDependencies": ["@bufbuild/protoc-gen-es", "@tailwindcss/cli", "@types/events", "events", "tailwindcss"],
+	"ignoreFiles": [
+		"afendor_admin/src/styles/app.css",
+		"afendor_admin/static/htmx.min.js",
+		"afendor_app_proxy/src/routes/instance_brand_preboot.js",
+		"afendor_app_proxy/src/routes/saturation_preboot.js",
+		"afendor_app/src/features/voice/utils/camera-effects/models/selfie_segmentation_256x256.d.onnx.ts",
+		"afendor_app/src/media/images/i-like-food.d.svg.ts"
+	],
+	"ignoreIssues": {
+		"afendor_api/src/api/infrastructure/activity/Contract.generated.ts": ["exports", "types"],
+		"afendor_app/src/features/app/domain_migration/DomainMigrationAppStorage.ts": ["exports"],
+		"afendor_app/src/features/voice/utils/CodecCapabilityDetector.ts": ["exports"],
+		"afendor_app/src/index.tsx": ["unlisted"]
+	},
+	"workspaces": {
+		".": {
+			"ignoreDependencies": ["vite"]
+		},
+		"afendor_api": {
+			"ignoreDependencies": [
+				"@messageformat/parser",
+				"@pdf-lib/fontkit",
+				"@vvo/tzdb",
+				"bidi-js",
+				"emoji-regex",
+				"harfbuzzjs",
+				"ioredis",
+				"maxmind",
+				"nodemailer",
+				"pg",
+				"pino",
+				"undici",
+				"validator"
+			],
+			"ignoreExportsUsedInFile": false
+		},
+		"afendor_app": {
+			"entry": [
+				"lingui.config.js",
+				"scripts/build-sw.mjs",
+				"scripts/Generate*.ts",
+				"src/features/account_engine/core/index.ts",
+				"src/features/platform/utils/BrowserAssertStrict.ts"
+			]
+		},
+		"afendor_desktop": {
+			"ignoreExportsUsedInFile": false,
+			"entry": [
+				"src/main/Bootstrap.ts",
+				"src/main/index.ts",
+				"src/preload/index.ts",
+				"src/preload/LegacyHarvestPreload.ts",
+				"src/engine/AccountEngineMain.ts",
+				"native/*/index.{js,d.ts}",
+				"native/*/loader-diagnostics.cjs",
+				"scripts/generate-windows-badges.mjs"
+			],
+			"project": ["src/**/*.{ts,tsx,mjs,js}", "scripts/**/*.mjs", "native/**/*.{js,mjs,cjs,d.ts}"],
+			"ignoreBinaries": ["reg.exe", "update-desktop-database", "xdg-mime"],
+			"ignoreDependencies": ["electron-builder"]
+		},
+		"afendor_docs": {
+			"entry": ["scripts/*.ts", "src/**/*.astro"],
+			"project": ["src/**/*.{ts,astro,mdx}", "scripts/**/*.ts"]
+		},
+		"packages/openapi": {
+			"project": ["src/**/*.ts"]
+		},
+		"packages/schema": {
+			"project": ["src/**/*.ts", "!src/gen/**"]
+		},
+		"packages/voice_engine_v2": {
+			"entry": ["src/**/*.bench.ts"]
+		},
+		"packages/constants": {
+			"ignoreExportsUsedInFile": false
+		},
+		"packages/config": {
+			"ignoreExportsUsedInFile": false
+		}
+	}
+}

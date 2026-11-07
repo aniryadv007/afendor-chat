@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+export const HttpStatus = {
+	OK: 200,
+	CREATED: 201,
+	ACCEPTED: 202,
+	NO_CONTENT: 204,
+	MOVED_PERMANENTLY: 301,
+	FOUND: 302,
+	SEE_OTHER: 303,
+	NOT_MODIFIED: 304,
+	TEMPORARY_REDIRECT: 307,
+	PERMANENT_REDIRECT: 308,
+	BAD_REQUEST: 400,
+	UNAUTHORIZED: 401,
+	FORBIDDEN: 403,
+	NOT_FOUND: 404,
+	METHOD_NOT_ALLOWED: 405,
+	CONFLICT: 409,
+	GONE: 410,
+	PAYLOAD_TOO_LARGE: 413,
+	TOO_MANY_REQUESTS: 429,
+	INTERNAL_SERVER_ERROR: 500,
+	NOT_IMPLEMENTED: 501,
+	BAD_GATEWAY: 502,
+	SERVICE_UNAVAILABLE: 503,
+	GATEWAY_TIMEOUT: 504,
+} as const;
+
+export const MimeType = {
+	JSON: 'application/json',
+	PDF: 'application/pdf',
+	PLAIN: 'text/plain',
+	HTML: 'text/html',
+	CSS: 'text/css',
+	PNG: 'image/png',
+	JPEG: 'image/jpeg',
+	GIF: 'image/gif',
+	WEBP: 'image/webp',
+	SVG: 'image/svg+xml',
+	MP3: 'audio/mpeg',
+	WAV: 'audio/wav',
+	MP4: 'video/mp4',
+} as const;
+
+export const REDIRECT_STATUS_CODES = [
+	HttpStatus.MOVED_PERMANENTLY,
+	HttpStatus.FOUND,
+	HttpStatus.SEE_OTHER,
+	HttpStatus.TEMPORARY_REDIRECT,
+	HttpStatus.PERMANENT_REDIRECT,
+] as const;
