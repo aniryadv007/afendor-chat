@@ -255,7 +255,7 @@ if [ "${NEED_ACQUISITION}" = true ]; then
         apt-get update && apt-get install -y git curl tar
     fi
 
-    GITHUB_REPO="${AFENDOR_GITHUB_REPO:-reign/afendor-chat}"
+    GITHUB_REPO="${AFENDOR_GITHUB_REPO:-aniryadv007/afendor-chat}"
     read_prompt "  Public GitHub Repository [${GITHUB_REPO}]: " INPUT_REPO "${GITHUB_REPO}"
     GITHUB_REPO="${INPUT_REPO:-${GITHUB_REPO}}"
 
