@@ -50,6 +50,7 @@
 /.velopack/
 **/dist-electron/
 **/build/
+!afendor_app/scripts/build/
 **/.turbo/
 *.exe
 *.nupkg
