@@ -46,7 +46,7 @@ get_compose_cmd() {
 # Determine active compose files based on storage backend
 get_compose_args() {
     local cmd
-    cmd="$(get_compose_cmd) --project-directory ${AFENDOR_DIR} -f ${COMPOSE_DIR}/docker-compose.yml"
+    cmd="$(get_compose_cmd) --project-directory ${COMPOSE_DIR} --env-file ${ENV_FILE} -f ${COMPOSE_DIR}/docker-compose.yml"
     
     # Check if external S3 mode is active
     if [ -f "${ENV_FILE}" ]; then

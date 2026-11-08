@@ -650,7 +650,7 @@ fi
 log_section "7. Pulling Production Container Images"
 
 log_info "Pre-pulling production containers before requesting DNS verification..."
-COMPOSE_ARGS="-f ${COMPOSE_DIR}/docker-compose.yml"
+COMPOSE_ARGS="--project-directory ${COMPOSE_DIR} --env-file ${ENV_FILE} -f ${COMPOSE_DIR}/docker-compose.yml"
 if [ "${STORAGE_CHOICE}" = "2" ]; then
     COMPOSE_ARGS="${COMPOSE_ARGS} -f ${COMPOSE_DIR}/docker-compose.s3.yml"
 fi
