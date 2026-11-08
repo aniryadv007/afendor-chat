@@ -12,7 +12,6 @@
 		header_up X-Forwarded-For {client_ip}
 		header_up X-Real-IP {client_ip}
 		header_up Host {host}
-		header_up X-Forwarded-Proto {scheme}
 	}
 }
 
@@ -23,42 +22,54 @@
 		respond "OK" 200
 	}
 
-	# API Endpoints
-	handle_path /api/* {
+	# -------------------------------------------------------------
+	# 1. API Subdomain (api.afendor.cc / api.*)
+	# -------------------------------------------------------------
+	@api host api.afendor.cc api.*
+	handle @api {
+		uri strip_prefix /api
 		import upstream api:8080
 	}
 
-	# Gateway Real-time WebSocket
-	handle /gateway {
-		rewrite * /
+	# -------------------------------------------------------------
+	# 2. Gateway Subdomain (gateway.afendor.cc / gateway.*)
+	# -------------------------------------------------------------
+	@gateway host gateway.afendor.cc gateway.*
+	handle @gateway {
+		uri strip_prefix /gateway
 		import upstream gateway:8771
 	}
 
-	handle_path /gateway/* {
-		import upstream gateway:8771
-	}
-
-	# Media Proxy Attachments and Avatars
-	handle_path /media/* {
+	# -------------------------------------------------------------
+	# 3. Media Subdomain (media.afendor.cc / media.*)
+	# -------------------------------------------------------------
+	@media host media.afendor.cc media.*
+	handle @media {
+		uri strip_prefix /media
 		import upstream media-proxy:8082
 	}
 
-	# WebRTC LiveKit Signaling
-	handle_path /livekit/* {
+	# -------------------------------------------------------------
+	# 4. Admin Subdomain (admin.afendor.cc / admin.*)
+	# -------------------------------------------------------------
+	@admin host admin.afendor.cc admin.*
+	handle @admin {
+		uri strip_prefix /admin
+		import upstream admin:3020
+	}
+
+	# -------------------------------------------------------------
+	# 5. LiveKit Subdomain (livekit.afendor.cc / livekit.*)
+	# -------------------------------------------------------------
+	@livekit host livekit.afendor.cc livekit.*
+	handle @livekit {
+		uri strip_prefix /livekit
 		import upstream livekit:7880
 	}
 
-	# Admin Dashboard
-	handle /admin {
-		rewrite * /
-		import upstream admin:3020
-	}
-
-	handle_path /admin/* {
-		import upstream admin:3020
-	}
-
-	# Well-Known Discovery Handlers
+	# -------------------------------------------------------------
+	# 6. Well-Known Discovery Handlers (All Domains)
+	# -------------------------------------------------------------
 	handle /.well-known/afendor {
 		import upstream api:8080
 	}
@@ -71,9 +82,43 @@
 		import upstream api:8080
 	}
 
-	# Frontend SPA App Proxy (Default Fallback)
+	# -------------------------------------------------------------
+	# 7. Path-based Fallback Routing (for web.afendor.cc or afendor.cc)
+	# -------------------------------------------------------------
+	handle_path /api/* {
+		import upstream api:8080
+	}
+
+	handle /gateway {
+		rewrite * /
+		import upstream gateway:8771
+	}
+
+	handle_path /gateway/* {
+		import upstream gateway:8771
+	}
+
+	handle_path /media/* {
+		import upstream media-proxy:8082
+	}
+
+	handle_path /livekit/* {
+		import upstream livekit:7880
+	}
+
+	handle /admin {
+		rewrite * /
+		import upstream admin:3020
+	}
+
+	handle_path /admin/* {
+		import upstream admin:3020
+	}
+
+	# -------------------------------------------------------------
+	# 8. Frontend SPA App Proxy (Default Fallback)
+	# -------------------------------------------------------------
 	handle {
 		import upstream app-proxy:8773
 	}
 }
-
