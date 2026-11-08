@@ -28,7 +28,13 @@ WORKDIR /usr/src/app/afendor_gateway
 RUN rebar3 compile --deps_only
 
 RUN cp config/sys.config.template config/sys.config && \
-	rebar3 as prod release
+	rebar3 as prod release && \
+	if [ -d _build/prod/rel/fluxer_gateway ]; then \
+		cp -r _build/prod/rel/fluxer_gateway _build/prod/rel/afendor_gateway && \
+		if [ -f _build/prod/rel/afendor_gateway/bin/fluxer_gateway ]; then \
+			cp _build/prod/rel/afendor_gateway/bin/fluxer_gateway _build/prod/rel/afendor_gateway/bin/afendor_gateway; \
+		fi \
+	fi
 
 FROM erlang:28.5.0.8-slim
 
