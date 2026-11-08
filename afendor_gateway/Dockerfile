@@ -64,7 +64,8 @@ COPY --chown=65532:65532 afendor_gateway/scripts/docker_entrypoint.sh /opt/afend
 COPY --chown=65532:65532 afendor_gateway/scripts/afendor_gateway_release_wrapper.sh /opt/afendor_gateway/bin/afendor_gateway.wrapper
 
 RUN mv /opt/afendor_gateway/bin/afendor_gateway /opt/afendor_gateway/bin/afendor_gateway.real && \
-	mv /opt/afendor_gateway/bin/afendor_gateway.wrapper /opt/afendor_gateway/bin/afendor_gateway
+	mv /opt/afendor_gateway/bin/afendor_gateway.wrapper /opt/afendor_gateway/bin/afendor_gateway && \
+	chmod +x /opt/afendor_gateway/bin/docker_entrypoint.sh /opt/afendor_gateway/bin/afendor_gateway
 
 USER 65532:65532
 

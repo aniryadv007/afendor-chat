@@ -15,7 +15,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm -rf /var/lib/apt/lists/*
 
 COPY afendor_media_proxy/tools/install-native-deps.sh /tmp/install-native-deps.sh
-RUN /tmp/install-native-deps.sh /usr/local
+RUN chmod +x /tmp/install-native-deps.sh && bash /tmp/install-native-deps.sh /usr/local
 
 RUN mkdir -p /native/lib \
     && cp -a /usr/local/lib/*.so.* /native/lib/
