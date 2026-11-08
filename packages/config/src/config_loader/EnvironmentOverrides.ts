@@ -13,7 +13,7 @@ interface NamedEnvOverride {
 	parse?: EnvValueParser;
 }
 
-const NAMED_AFENDOR_ENV_OVERRIDES: Record<string, NamedEnvOverride> = {
+export const NAMED_AFENDOR_ENV_OVERRIDES: Record<string, NamedEnvOverride> = {
 	AFENDOR_ENV: {path: ['env']},
 	AFENDOR_BASE_DOMAIN: {path: ['domain', 'base_domain']},
 	AFENDOR_PUBLIC_ORIGIN: {path: ['domain', 'public_origin']},
@@ -642,5 +642,5 @@ export function buildNamedFluxerEnvOverrides(env: NodeJS.ProcessEnv): ConfigObje
 	return overrides;
 }
 
-export const NAMED_AFENDOR_ENV_OVERRIDES = NAMED_AFENDOR_ENV_OVERRIDES;
+export const NAMED_FLUXER_ENV_OVERRIDES = NAMED_AFENDOR_ENV_OVERRIDES;
 export const buildNamedAfendorEnvOverrides = buildNamedFluxerEnvOverrides;
