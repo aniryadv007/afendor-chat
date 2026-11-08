@@ -73,7 +73,7 @@
 
 	# Frontend SPA App Proxy (Default Fallback)
 	handle {
-		import upstream app-proxy:8080
+		import upstream app-proxy:8773
 	}
 }
 
