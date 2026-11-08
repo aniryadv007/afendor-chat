@@ -6,7 +6,7 @@ WORKDIR /usr/src/app
 
 COPY . .
 
-RUN cargo build --release -p afendor-unfurl
+RUN cargo build --release -p fluxer-unfurl
 
 FROM debian:trixie-slim
 
@@ -30,7 +30,7 @@ WORKDIR /usr/local/bin
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /usr/src/app/target/release/afendor-unfurl /usr/local/bin/afendor-unfurl
+COPY --from=builder /usr/src/app/target/release/fluxer-unfurl /usr/local/bin/afendor-unfurl
 
 ENV BUILD_VERSION="${BUILD_VERSION}"
 

@@ -44,9 +44,9 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
-    cargo test -p afendor-media-proxy \
-    && cargo build --release -p afendor-media-proxy \
-    && cp target/release/afendor-media-proxy /usr/local/bin/afendor-media-proxy
+    cargo test -p fluxer-media-proxy \
+    && cargo build --release -p fluxer-media-proxy \
+    && cp target/release/fluxer-media-proxy /usr/local/bin/afendor-media-proxy
 
 FROM ${DEBIAN_BASE} AS runtime
 ARG BUILD_VERSION=""

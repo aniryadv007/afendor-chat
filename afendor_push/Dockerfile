@@ -6,7 +6,7 @@ WORKDIR /usr/src/app
 
 COPY . .
 
-RUN cargo build --release -p afendor-push
+RUN cargo build --release -p fluxer-push
 
 FROM debian:trixie-slim
 
@@ -30,7 +30,7 @@ WORKDIR /usr/local/bin
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /usr/src/app/target/release/afendor-push /usr/local/bin/afendor-push
+COPY --from=builder /usr/src/app/target/release/fluxer-push /usr/local/bin/afendor-push
 
 ENV BUILD_VERSION="${BUILD_VERSION}"
 

@@ -6,7 +6,7 @@ WORKDIR /usr/src/app
 
 COPY . .
 
-RUN cargo build --release -p afendor-snowflakes
+RUN cargo build --release -p fluxer-snowflakes
 
 FROM debian:trixie-slim
 
@@ -30,7 +30,7 @@ WORKDIR /usr/local/bin
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /usr/src/app/target/release/afendor-snowflakes /usr/local/bin/afendor-snowflakes
+COPY --from=builder /usr/src/app/target/release/fluxer-snowflakes /usr/local/bin/afendor-snowflakes
 
 ENV BUILD_VERSION="${BUILD_VERSION}"
 

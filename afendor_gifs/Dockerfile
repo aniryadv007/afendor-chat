@@ -6,7 +6,7 @@ WORKDIR /usr/src/app
 
 COPY . .
 
-RUN cargo build --release -p afendor-gifs
+RUN cargo build --release -p fluxer-gifs
 
 FROM debian:trixie-slim
 
@@ -30,7 +30,7 @@ WORKDIR /usr/local/bin
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /usr/src/app/target/release/afendor-gifs /usr/local/bin/afendor-gifs
+COPY --from=builder /usr/src/app/target/release/fluxer-gifs /usr/local/bin/afendor-gifs
 
 ENV BUILD_VERSION="${BUILD_VERSION}"
 

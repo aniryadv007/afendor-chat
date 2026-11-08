@@ -6,7 +6,7 @@ WORKDIR /usr/src/app
 
 COPY . .
 
-RUN cargo build --release -p afendor-users --features scylla
+RUN cargo build --release -p fluxer-users --features scylla
 
 FROM debian:trixie-slim
 
@@ -30,7 +30,7 @@ WORKDIR /usr/local/bin
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /usr/src/app/target/release/afendor-users /usr/local/bin/afendor-users
+COPY --from=builder /usr/src/app/target/release/fluxer-users /usr/local/bin/afendor-users
 
 ENV BUILD_VERSION="${BUILD_VERSION}"
 
