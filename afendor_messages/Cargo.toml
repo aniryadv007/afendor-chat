@@ -1,9 +1,17 @@
-﻿[package]
+[package]
 name = "fluxer-messages"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 publish = false
+
+[lib]
+name = "afendor_messages"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fluxer-messages"
+path = "src/main.rs"
 
 [dependencies]
 afendor_common = { path = "../afendor_common" }
