@@ -1,4 +1,4 @@
-﻿<p align="center">
+<p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="./afendor_static/marketing/branding/logo-white.svg">
     <img src="./afendor_static/marketing/branding/logo-color.svg" alt="Afendor Chat logo" width="400">

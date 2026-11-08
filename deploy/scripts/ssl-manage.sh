@@ -39,7 +39,6 @@ REQUIRED_DOMAINS=(
     "gateway.${DOMAIN}"
     "media.${DOMAIN}"
     "livekit.${DOMAIN}"
-    "cdn.${DOMAIN}"
     "admin.${DOMAIN}"
 )
 

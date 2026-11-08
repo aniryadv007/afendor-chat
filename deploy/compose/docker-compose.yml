@@ -470,7 +470,6 @@ services:
       options:
         max-size: "5m"
         max-file: "2"
-        max-file: "2"
 
   # ----------------------------------------------------------------------------
   # 6. INTERNAL EDGE DISPATCHER (PORT 8080)
