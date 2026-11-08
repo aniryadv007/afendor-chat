@@ -5,6 +5,14 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[lib]
+name = "fluxer_dev"
+path = "src/lib.rs"
+
+[[bin]]
+name = "afendor-dev"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0.104"
 axum = "0.8.9"
