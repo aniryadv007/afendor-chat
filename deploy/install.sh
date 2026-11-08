@@ -289,7 +289,16 @@ if [ "${NEED_ACQUISITION}" = true ]; then
         echo "${AFENDOR_GHCR_PAT}" | docker login ghcr.io -u "${AFENDOR_GHCR_USER:-reign}" --password-stdin 2>/dev/null || true
     fi
 else
-    log_success "Existing application deployment files verified at ${INSTALL_DIR}."
+    log_info "Synchronizing latest deployment configurations from repository..."
+    TEMP_UPDATE=$(mktemp -d)
+    if git clone --depth 1 "https://github.com/${GITHUB_REPO}.git" "${TEMP_UPDATE}" 2>/dev/null; then
+        cp -rf "${TEMP_UPDATE}/deploy" "${INSTALL_DIR}/"
+        rm -rf "${TEMP_UPDATE}"
+        log_success "Deployment manifests updated to latest repository version."
+    else
+        rm -rf "${TEMP_UPDATE}" 2>/dev/null || true
+        log_success "Existing application deployment files verified at ${INSTALL_DIR}."
+    fi
 fi
 
 # Ensure executable permissions on CLI and scripts
