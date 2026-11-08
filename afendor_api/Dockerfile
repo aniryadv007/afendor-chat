@@ -21,8 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY . .
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter fluxer_api run build
-RUN pnpm deploy --legacy --filter=fluxer_api --prod --config.allow-unused-patches=true /out && \
+RUN pnpm --filter afendor_api run build
+RUN pnpm deploy --legacy --filter=afendor_api --prod --config.allow-unused-patches=true /out && \
 	rm -rf /out/pkgs /out/dist
 
 FROM node:26-trixie-slim
@@ -31,32 +31,32 @@ ARG BUILD_VERSION
 ARG SOURCE_SHA
 ARG SOURCE_DATE
 
-LABEL org.opencontainers.image.title="fluxer-api"
+LABEL org.opencontainers.image.title="afendor-api"
 LABEL org.opencontainers.image.description="Fluxer HTTP API and background workers"
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
 LABEL org.opencontainers.image.vendor="Fluxer"
-LABEL org.opencontainers.image.url="https://fluxer.com"
-LABEL org.opencontainers.image.documentation="https://docs.fluxer.com"
-LABEL org.opencontainers.image.source="https://github.com/fluxerapp/fluxer"
+LABEL org.opencontainers.image.url="https://afendor.com"
+LABEL org.opencontainers.image.documentation="https://docs.afendor.com"
+LABEL org.opencontainers.image.source="https://github.com/afendorapp/afendor"
 LABEL org.opencontainers.image.version="${BUILD_VERSION}"
 LABEL org.opencontainers.image.revision="${SOURCE_SHA}"
 LABEL org.opencontainers.image.created="${SOURCE_DATE}"
-LABEL app.fluxer.build-version="${BUILD_VERSION}"
+LABEL app.afendor.build-version="${BUILD_VERSION}"
 
-WORKDIR /usr/src/app/fluxer_api
+WORKDIR /usr/src/app/afendor_api
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
 		ca-certificates && \
 	rm -rf /var/lib/apt/lists/*
 
 COPY --from=deploy --chown=65532:65532 /out ./
-COPY --from=deploy --chown=65532:65532 /usr/src/app/fluxer_api/dist ./dist
-COPY --from=deploy --chown=65532:65532 /usr/src/app/fluxer_api/bin ./bin
+COPY --from=deploy --chown=65532:65532 /usr/src/app/afendor_api/dist ./dist
+COPY --from=deploy --chown=65532:65532 /usr/src/app/afendor_api/bin ./bin
 COPY --from=deploy --chown=65532:65532 /usr/src/app/tsconfigs /usr/src/app/tsconfigs
 
-RUN mkdir -p /run/fluxer && \
-	chmod 700 /run/fluxer && \
-	chown 65532:65532 /usr/src/app /usr/src/app/fluxer_api /run/fluxer
+RUN mkdir -p /run/afendor && \
+	chmod 700 /run/afendor && \
+	chown 65532:65532 /usr/src/app /usr/src/app/afendor_api /run/afendor
 
 ENV HOME=/usr/src/app
 ENV NODE_ENV=production

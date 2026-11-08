@@ -14,7 +14,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         libvips-dev libwebp-dev liblcms2-dev libyuv-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY fluxer_media_proxy/tools/install-native-deps.sh /tmp/install-native-deps.sh
+COPY afendor_media_proxy/tools/install-native-deps.sh /tmp/install-native-deps.sh
 RUN /tmp/install-native-deps.sh /usr/local
 
 RUN mkdir -p /native/lib \
@@ -44,26 +44,26 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/build/target \
-    cargo test -p fluxer-media-proxy \
-    && cargo build --release -p fluxer-media-proxy \
-    && cp target/release/fluxer-media-proxy /usr/local/bin/fluxer-media-proxy
+    cargo test -p afendor-media-proxy \
+    && cargo build --release -p afendor-media-proxy \
+    && cp target/release/afendor-media-proxy /usr/local/bin/afendor-media-proxy
 
 FROM ${DEBIAN_BASE} AS runtime
 ARG BUILD_VERSION=""
 ARG SOURCE_SHA=""
 ARG SOURCE_DATE=""
 
-LABEL org.opencontainers.image.title="fluxer-media-proxy"
+LABEL org.opencontainers.image.title="afendor-media-proxy"
 LABEL org.opencontainers.image.description="High-throughput media transcoding proxy: libvips + libavformat + libcurl"
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
 LABEL org.opencontainers.image.vendor="Fluxer"
-LABEL org.opencontainers.image.url="https://fluxer.com"
-LABEL org.opencontainers.image.documentation="https://docs.fluxer.com"
-LABEL org.opencontainers.image.source="https://github.com/fluxerapp/fluxer"
+LABEL org.opencontainers.image.url="https://afendor.com"
+LABEL org.opencontainers.image.documentation="https://docs.afendor.com"
+LABEL org.opencontainers.image.source="https://github.com/afendorapp/afendor"
 LABEL org.opencontainers.image.version="${BUILD_VERSION}"
 LABEL org.opencontainers.image.revision="${SOURCE_SHA}"
 LABEL org.opencontainers.image.created="${SOURCE_DATE}"
-LABEL app.fluxer.build-version="${BUILD_VERSION}"
+LABEL app.afendor.build-version="${BUILD_VERSION}"
 
 COPY --from=native /native/lib /usr/local/lib
 
@@ -81,18 +81,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && rm -f /usr/lib/*/libheif.so.1* \
     && ldconfig
 
-RUN groupadd --system --gid 10001 fluxer \
-    && useradd --system --uid 10001 --gid 10001 --home /var/lib/fluxer --create-home fluxer
+RUN groupadd --system --gid 10001 afendor \
+    && useradd --system --uid 10001 --gid 10001 --home /var/lib/afendor --create-home afendor
 
-COPY --from=builder /usr/local/bin/fluxer-media-proxy /usr/local/bin/fluxer-media-proxy
+COPY --from=builder /usr/local/bin/afendor-media-proxy /usr/local/bin/afendor-media-proxy
 
-RUN install -d -o fluxer -g fluxer /var/lib/fluxer/media_proxy_storage
+RUN install -d -o afendor -g afendor /var/lib/afendor/media_proxy_storage
 
-RUN ldd /usr/local/bin/fluxer-media-proxy \
-    && ! ldd /usr/local/bin/fluxer-media-proxy | grep -q 'not found' \
+RUN ldd /usr/local/bin/afendor-media-proxy \
+    && ! ldd /usr/local/bin/afendor-media-proxy | grep -q 'not found' \
     && [ "$(ldconfig -p | grep -c 'libheif\.so\.1 ')" -eq 1 ] \
     && ldconfig -p | grep -q 'libheif\.so\.1 .* => /usr/local/lib/libheif\.so\.1$' \
-    && ldd /usr/local/bin/fluxer-media-proxy | grep -q 'libheif\.so\.1 => /usr/local/lib/libheif\.so\.1'
+    && ldd /usr/local/bin/afendor-media-proxy | grep -q 'libheif\.so\.1 => /usr/local/lib/libheif\.so\.1'
 
 ENV LD_PRELOAD=libjemalloc.so.2
 ENV MALLOC_CONF="background_thread:true,metadata_thp:auto,dirty_decay_ms:5000,muzzy_decay_ms:5000"
@@ -107,12 +107,12 @@ ENV AFENDOR_MEDIA_PROXY_PORT=8080
 ENV BUILD_VERSION="${BUILD_VERSION}"
 
 USER 10001:10001
-WORKDIR /var/lib/fluxer
+WORKDIR /var/lib/afendor
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["/usr/local/bin/fluxer-media-proxy", "healthcheck"]
+    CMD ["/usr/local/bin/afendor-media-proxy", "healthcheck"]
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["/usr/local/bin/fluxer-media-proxy"]
+CMD ["/usr/local/bin/afendor-media-proxy"]

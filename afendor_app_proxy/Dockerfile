@@ -6,7 +6,7 @@ ARG BUNDLE_LOCAL_ASSETS="true"
 ARG APP_ASSETS_REF=app-assets
 ARG APP_ASSETS_PLATFORM=$BUILDPLATFORM
 
-# ---------- Stage 1: Build the SPA (fluxer_app) ----------
+# ---------- Stage 1: Build the SPA (afendor_app) ----------
 FROM node:26-trixie-slim AS app-build
 
 ARG BUILD_VERSION
@@ -33,7 +33,7 @@ RUN set -eux; \
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches/ ./patches/
-COPY fluxer_app/package.json ./fluxer_app/
+COPY afendor_app/package.json ./afendor_app/
 COPY packages/constants/package.json ./packages/constants/
 COPY packages/date_utils/package.json ./packages/date_utils/
 COPY packages/desktop_ipc/package.json ./packages/desktop_ipc/
@@ -45,9 +45,9 @@ COPY packages/record_utils/package.json ./packages/record_utils/
 COPY packages/schema/package.json ./packages/schema/
 COPY packages/snowflake/package.json ./packages/snowflake/
 COPY packages/voice_engine_v2/package.json ./packages/voice_engine_v2/
-COPY fluxer_app/pkgs/livekit-client/package.json ./fluxer_app/pkgs/livekit-client/
+COPY afendor_app/pkgs/livekit-client/package.json ./afendor_app/pkgs/livekit-client/
 
-RUN pnpm install --frozen-lockfile --filter fluxer_app...
+RUN pnpm install --frozen-lockfile --filter afendor_app...
 
 COPY tsconfigs ./tsconfigs
 COPY packages/constants/ ./packages/constants/
@@ -69,28 +69,28 @@ COPY packages/markdown_parser/rust/.cargo/ ./packages/markdown_parser/rust/.carg
 COPY packages/markdown_parser/rust/benches/parser.rs ./packages/markdown_parser/rust/benches/
 COPY packages/markdown_parser/rust/src/ ./packages/markdown_parser/rust/src/
 COPY tools/ci/ ./tools/ci/
-COPY fluxer_app/index.html fluxer_app/lingui.config.js fluxer_app/package.json fluxer_app/postcss.config.js fluxer_app/rspack.config.mjs fluxer_app/tsconfig.base.json fluxer_app/tsconfig.json ./fluxer_app/
-COPY fluxer_app/pkgs/livekit-client/ ./fluxer_app/pkgs/livekit-client/
-COPY fluxer_app/rust/ ./fluxer_app/rust/
-COPY fluxer_app/scripts/ ./fluxer_app/scripts/
-COPY fluxer_app/src/ ./fluxer_app/src/
+COPY afendor_app/index.html afendor_app/lingui.config.js afendor_app/package.json afendor_app/postcss.config.js afendor_app/rspack.config.mjs afendor_app/tsconfig.base.json afendor_app/tsconfig.json ./afendor_app/
+COPY afendor_app/pkgs/livekit-client/ ./afendor_app/pkgs/livekit-client/
+COPY afendor_app/rust/ ./afendor_app/rust/
+COPY afendor_app/scripts/ ./afendor_app/scripts/
+COPY afendor_app/src/ ./afendor_app/src/
 
 ENV BUILD_VERSION=${BUILD_VERSION} \
 	PUBLIC_ASSET_BASE_URL=${PUBLIC_ASSET_BASE_URL}
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
 	--mount=type=cache,target=/usr/local/cargo/git \
-	cd fluxer_app && pnpm build
+	cd afendor_app && pnpm build
 
 # ---------- Stage 2: The one canonical asset tree every architecture serves ----------
 # Stage for CI to extract the full dist (docker bake app-dist target)
 FROM alpine:3.24 AS app-dist
-COPY --from=app-build /usr/src/app/fluxer_app/dist /dist
+COPY --from=app-build /usr/src/app/afendor_app/dist /dist
 
 FROM alpine:3.24 AS app-assets
 ARG BUNDLE_LOCAL_ASSETS=true
 ARG PUBLIC_ASSET_BASE_URL=""
-COPY fluxer_app_proxy/scripts/precompress_assets.sh /usr/local/bin/precompress_assets.sh
+COPY afendor_app_proxy/scripts/precompress_assets.sh /usr/local/bin/precompress_assets.sh
 RUN apk add --no-cache brotli
 RUN --mount=type=bind,from=app-dist,source=/dist,target=/dist \
 	cp -a /dist /assets \
@@ -116,14 +116,14 @@ FROM rust:1-trixie AS rust-builder
 WORKDIR /usr/src/app
 
 COPY Cargo.lock ./
-COPY fluxer_common/ fluxer_common/
-COPY fluxer_app_proxy/ fluxer_app_proxy/
+COPY afendor_common/ afendor_common/
+COPY afendor_app_proxy/ afendor_app_proxy/
 
 RUN printf '%s\n' \
 	'[workspace]' \
 	'members = [' \
-	'    "fluxer_app_proxy",' \
-	'    "fluxer_common",' \
+	'    "afendor_app_proxy",' \
+	'    "afendor_common",' \
 	']' \
 	'resolver = "2"' \
 	'' \
@@ -137,8 +137,8 @@ RUN printf '%s\n' \
 	'strip = "symbols"' \
 	> Cargo.toml
 
-RUN cargo build --release -p fluxer_app_proxy \
-	&& cp target/release/fluxer_app_proxy /usr/local/bin/fluxer-app-proxy
+RUN cargo build --release -p afendor_app_proxy \
+	&& cp target/release/afendor_app_proxy /usr/local/bin/afendor-app-proxy
 
 # ---------- Stage 4: Runtime ----------
 FROM debian:trixie-slim
@@ -149,17 +149,17 @@ ARG AFENDOR_SELF_HOSTED="false"
 ARG SOURCE_SHA=""
 ARG SOURCE_DATE=""
 
-LABEL org.opencontainers.image.title="fluxer-app-proxy"
+LABEL org.opencontainers.image.title="afendor-app-proxy"
 LABEL org.opencontainers.image.description="Fluxer web app and edge proxy"
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
 LABEL org.opencontainers.image.vendor="Fluxer"
-LABEL org.opencontainers.image.url="https://fluxer.com"
-LABEL org.opencontainers.image.documentation="https://docs.fluxer.com"
-LABEL org.opencontainers.image.source="https://github.com/fluxerapp/fluxer"
+LABEL org.opencontainers.image.url="https://afendor.com"
+LABEL org.opencontainers.image.documentation="https://docs.afendor.com"
+LABEL org.opencontainers.image.source="https://github.com/afendorapp/afendor"
 LABEL org.opencontainers.image.version="${BUILD_VERSION}"
 LABEL org.opencontainers.image.revision="${SOURCE_SHA}"
 LABEL org.opencontainers.image.created="${SOURCE_DATE}"
-LABEL app.fluxer.build-version="${BUILD_VERSION}"
+LABEL app.afendor.build-version="${BUILD_VERSION}"
 
 WORKDIR /srv/app
 
@@ -167,7 +167,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	ca-certificates curl libjemalloc2 \
 	&& rm -rf /var/lib/apt/lists/*
 
-COPY --from=rust-builder /usr/local/bin/fluxer-app-proxy /usr/local/bin/fluxer-app-proxy
+COPY --from=rust-builder /usr/local/bin/afendor-app-proxy /usr/local/bin/afendor-app-proxy
 COPY --from=app-static /assets ./static/
 
 ENV BUILD_VERSION="${BUILD_VERSION}"
@@ -185,4 +185,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
 	CMD curl -f http://127.0.0.1:${AFENDOR_APP_PROXY_PORT:-8080}/_ready || exit 1
 
-CMD ["/usr/local/bin/fluxer-app-proxy"]
+CMD ["/usr/local/bin/afendor-app-proxy"]

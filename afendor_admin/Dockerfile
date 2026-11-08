@@ -22,8 +22,8 @@ RUN TAILWIND_OXIDE_VERSION="4.2.1" \
 	&& ls -la node_modules/.bin/tailwindcss
 
 COPY Cargo.lock Cargo.lock
-COPY fluxer_admin fluxer_admin
-COPY fluxer_common fluxer_common
+COPY afendor_admin afendor_admin
+COPY afendor_common afendor_common
 COPY packages/fonts/manifest.json packages/fonts/manifest.json
 COPY packages/fonts/NOTICE.md packages/fonts/NOTICE.md
 COPY packages/fonts/LICENSE-IBM-PLEX.txt packages/fonts/LICENSE-IBM-PLEX.txt
@@ -31,7 +31,7 @@ COPY packages/fonts/files/FluxerSans packages/fonts/files/FluxerSans
 COPY packages/fonts/files/FluxerMono packages/fonts/files/FluxerMono
 RUN printf '%s\n' \
 	'[workspace]' \
-	'members = ["fluxer_admin", "fluxer_common"]' \
+	'members = ["afendor_admin", "afendor_common"]' \
 	'resolver = "2"' \
 	'' \
 	'[workspace.package]' \
@@ -44,14 +44,14 @@ RUN printf '%s\n' \
 	'strip = "symbols"' \
 	> Cargo.toml
 
-RUN cargo build --release -p fluxer_admin \
-	&& cp target/release/fluxer_admin /usr/local/bin/fluxer-admin
+RUN cargo build --release -p afendor_admin \
+	&& cp target/release/afendor_admin /usr/local/bin/afendor-admin
 
-RUN test -s target/release/build/fluxer_admin-*/out/static/app.css \
+RUN test -s target/release/build/afendor_admin-*/out/static/app.css \
 	&& echo "Tailwind CSS compiled successfully"
 
-RUN test "$(ls target/release/build/fluxer_admin-*/out/static/fonts/*.woff2 | wc -l)" -eq 16 \
-	&& ls target/release/build/fluxer_admin-*/out/static/fonts/fonts.*.css \
+RUN test "$(ls target/release/build/afendor_admin-*/out/static/fonts/*.woff2 | wc -l)" -eq 16 \
+	&& ls target/release/build/afendor_admin-*/out/static/fonts/fonts.*.css \
 	&& echo "Latin-core fonts bundled successfully"
 
 FROM debian:trixie-slim AS runtime
@@ -60,23 +60,23 @@ ARG BUILD_VERSION=""
 ARG SOURCE_SHA=""
 ARG SOURCE_DATE=""
 
-LABEL org.opencontainers.image.title="fluxer-admin"
+LABEL org.opencontainers.image.title="afendor-admin"
 LABEL org.opencontainers.image.description="Fluxer admin console"
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
 LABEL org.opencontainers.image.vendor="Fluxer"
-LABEL org.opencontainers.image.url="https://fluxer.com"
-LABEL org.opencontainers.image.documentation="https://docs.fluxer.com"
-LABEL org.opencontainers.image.source="https://github.com/fluxerapp/fluxer"
+LABEL org.opencontainers.image.url="https://afendor.com"
+LABEL org.opencontainers.image.documentation="https://docs.afendor.com"
+LABEL org.opencontainers.image.source="https://github.com/afendorapp/afendor"
 LABEL org.opencontainers.image.version="${BUILD_VERSION}"
 LABEL org.opencontainers.image.revision="${SOURCE_SHA}"
 LABEL org.opencontainers.image.created="${SOURCE_DATE}"
-LABEL app.fluxer.build-version="${BUILD_VERSION}"
+LABEL app.afendor.build-version="${BUILD_VERSION}"
 
 WORKDIR /usr/local/bin
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-COPY --from=builder /usr/local/bin/fluxer-admin /usr/local/bin/fluxer-admin
+COPY --from=builder /usr/local/bin/afendor-admin /usr/local/bin/afendor-admin
 
 ENV BUILD_VERSION="${BUILD_VERSION}"
 ENV AFENDOR_ADMIN_HOST="0.0.0.0"
@@ -86,4 +86,4 @@ USER 65532:65532
 
 EXPOSE 8080
 
-CMD ["/usr/local/bin/fluxer-admin"]
+CMD ["/usr/local/bin/afendor-admin"]

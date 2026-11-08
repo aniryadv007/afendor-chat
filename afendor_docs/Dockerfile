@@ -17,14 +17,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 		python3 && \
 	rm -rf /var/lib/apt/lists/*
 
-ENV AFENDOR_DOCS_ENDPOINT=https://docs.fluxer.com
+ENV AFENDOR_DOCS_ENDPOINT=https://docs.afendor.com
 ENV AFENDOR_DOCS_SEARCH_INDEXING=true
 
 COPY . .
 
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter fluxer_docs run build
-RUN pnpm deploy --legacy --filter=fluxer_docs --prod --config.allow-unused-patches=true /out
+RUN pnpm --filter afendor_docs run build
+RUN pnpm deploy --legacy --filter=afendor_docs --prod --config.allow-unused-patches=true /out
 
 FROM node:26-trixie-slim
 
@@ -32,7 +32,7 @@ ARG BUILD_VERSION=""
 ARG SOURCE_SHA=""
 ARG SOURCE_DATE=""
 
-WORKDIR /usr/src/app/fluxer_docs
+WORKDIR /usr/src/app/afendor_docs
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
 		ca-certificates \
@@ -42,20 +42,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN npm install -g pnpm@11.27.0
 
 LABEL maintainer="Fluxer"
-LABEL org.opencontainers.image.title="fluxer-docs"
+LABEL org.opencontainers.image.title="afendor-docs"
 LABEL org.opencontainers.image.description="Fluxer API and protocol reference"
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
 LABEL org.opencontainers.image.vendor="Fluxer"
-LABEL org.opencontainers.image.url="https://fluxer.com"
-LABEL org.opencontainers.image.documentation="https://docs.fluxer.com"
-LABEL org.opencontainers.image.source="https://github.com/fluxerapp/fluxer"
+LABEL org.opencontainers.image.url="https://afendor.com"
+LABEL org.opencontainers.image.documentation="https://docs.afendor.com"
+LABEL org.opencontainers.image.source="https://github.com/afendorapp/afendor"
 LABEL org.opencontainers.image.version="${BUILD_VERSION}"
 LABEL org.opencontainers.image.revision="${SOURCE_SHA}"
 LABEL org.opencontainers.image.created="${SOURCE_DATE}"
-LABEL app.fluxer.build-version="${BUILD_VERSION}"
+LABEL app.afendor.build-version="${BUILD_VERSION}"
 
 COPY --from=deploy /out ./
-COPY --from=deploy /usr/src/app/fluxer_docs/dist ./dist
+COPY --from=deploy /usr/src/app/afendor_docs/dist ./dist
 
 RUN chown -R 65532:65532 /usr/src/app
 
@@ -64,7 +64,7 @@ ENV NODE_ENV=production
 ENV NODE_OPTIONS="--enable-source-maps"
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 ENV BUILD_VERSION=${BUILD_VERSION}
-ENV AFENDOR_DOCS_ENDPOINT=https://docs.fluxer.com
+ENV AFENDOR_DOCS_ENDPOINT=https://docs.afendor.com
 ENV AFENDOR_DOCS_SEARCH_INDEXING=true
 
 USER 65532:65532

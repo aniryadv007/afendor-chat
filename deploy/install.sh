@@ -263,9 +263,7 @@ if [ "${NEED_ACQUISITION}" = true ]; then
     TEMP_CLONE=$(mktemp -d)
     mkdir -p "${INSTALL_DIR}"
     if git clone --depth 1 "https://github.com/${GITHUB_REPO}.git" "${TEMP_CLONE}" 2>/dev/null; then
-        cp -r "${TEMP_CLONE}/deploy" "${INSTALL_DIR}/"
-        cp -r "${TEMP_CLONE}/config" "${INSTALL_DIR}/"
-        cp -r "${TEMP_CLONE}/packages" "${INSTALL_DIR}/" 2>/dev/null || true
+        cp -r "${TEMP_CLONE}/." "${INSTALL_DIR}/"
         rm -rf "${TEMP_CLONE}"
         log_success "Application deployment files downloaded and prepared."
     else
@@ -292,7 +290,7 @@ else
     log_info "Synchronizing latest deployment configurations from repository..."
     TEMP_UPDATE=$(mktemp -d)
     if git clone --depth 1 "https://github.com/${GITHUB_REPO}.git" "${TEMP_UPDATE}" 2>/dev/null; then
-        cp -rf "${TEMP_UPDATE}/deploy" "${INSTALL_DIR}/"
+        cp -rf "${TEMP_UPDATE}/." "${INSTALL_DIR}/"
         rm -rf "${TEMP_UPDATE}"
         log_success "Deployment manifests updated to latest repository version."
     else

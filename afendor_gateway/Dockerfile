@@ -24,7 +24,7 @@ RUN curl --retry 5 --retry-delay 2 --retry-all-errors --proto '=https' --tlsv1.2
 	sh -s -- -y --profile minimal --default-toolchain "${RUST_TOOLCHAIN}"
 
 COPY . .
-WORKDIR /usr/src/app/fluxer_gateway
+WORKDIR /usr/src/app/afendor_gateway
 RUN rebar3 compile --deps_only
 
 RUN cp config/sys.config.template config/sys.config && \
@@ -36,35 +36,35 @@ ARG BUILD_VERSION=""
 ARG SOURCE_SHA=""
 ARG SOURCE_DATE=""
 
-LABEL org.opencontainers.image.title="fluxer-gateway"
+LABEL org.opencontainers.image.title="afendor-gateway"
 LABEL org.opencontainers.image.description="Fluxer realtime gateway"
 LABEL org.opencontainers.image.licenses="AGPL-3.0-or-later"
 LABEL org.opencontainers.image.vendor="Fluxer"
-LABEL org.opencontainers.image.url="https://fluxer.com"
-LABEL org.opencontainers.image.documentation="https://docs.fluxer.com"
-LABEL org.opencontainers.image.source="https://github.com/fluxerapp/fluxer"
+LABEL org.opencontainers.image.url="https://afendor.com"
+LABEL org.opencontainers.image.documentation="https://docs.afendor.com"
+LABEL org.opencontainers.image.source="https://github.com/afendorapp/afendor"
 LABEL org.opencontainers.image.version="${BUILD_VERSION}"
 LABEL org.opencontainers.image.revision="${SOURCE_SHA}"
 LABEL org.opencontainers.image.created="${SOURCE_DATE}"
-LABEL app.fluxer.build-version="${BUILD_VERSION}"
+LABEL app.afendor.build-version="${BUILD_VERSION}"
 
-WORKDIR /opt/fluxer_gateway
+WORKDIR /opt/afendor_gateway
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	ca-certificates \
 	curl \
 	libstdc++6 \
 	&& rm -rf /var/lib/apt/lists/* && \
-	groupadd -r -g 65532 fluxer && \
-	useradd -r -u 65532 -g 65532 -s /sbin/nologin -d /opt/fluxer_gateway fluxer && \
-	chown 65532:65532 /opt/fluxer_gateway
+	groupadd -r -g 65532 afendor && \
+	useradd -r -u 65532 -g 65532 -s /sbin/nologin -d /opt/afendor_gateway afendor && \
+	chown 65532:65532 /opt/afendor_gateway
 
-COPY --from=build --chown=65532:65532 /usr/src/app/fluxer_gateway/_build/prod/rel/fluxer_gateway .
-COPY --chown=65532:65532 fluxer_gateway/scripts/docker_entrypoint.sh /opt/fluxer_gateway/bin/docker_entrypoint.sh
-COPY --chown=65532:65532 fluxer_gateway/scripts/fluxer_gateway_release_wrapper.sh /opt/fluxer_gateway/bin/fluxer_gateway.wrapper
+COPY --from=build --chown=65532:65532 /usr/src/app/afendor_gateway/_build/prod/rel/afendor_gateway .
+COPY --chown=65532:65532 afendor_gateway/scripts/docker_entrypoint.sh /opt/afendor_gateway/bin/docker_entrypoint.sh
+COPY --chown=65532:65532 afendor_gateway/scripts/afendor_gateway_release_wrapper.sh /opt/afendor_gateway/bin/afendor_gateway.wrapper
 
-RUN mv /opt/fluxer_gateway/bin/fluxer_gateway /opt/fluxer_gateway/bin/fluxer_gateway.real && \
-	mv /opt/fluxer_gateway/bin/fluxer_gateway.wrapper /opt/fluxer_gateway/bin/fluxer_gateway
+RUN mv /opt/afendor_gateway/bin/afendor_gateway /opt/afendor_gateway/bin/afendor_gateway.real && \
+	mv /opt/afendor_gateway/bin/afendor_gateway.wrapper /opt/afendor_gateway/bin/afendor_gateway
 
 USER 65532:65532
 
@@ -72,4 +72,4 @@ ENV BUILD_VERSION="${BUILD_VERSION}"
 
 EXPOSE 8080 8081 4369
 
-ENTRYPOINT ["/opt/fluxer_gateway/bin/docker_entrypoint.sh"]
+ENTRYPOINT ["/opt/afendor_gateway/bin/docker_entrypoint.sh"]
