@@ -78,6 +78,8 @@ COPY afendor_app/src/ ./afendor_app/src/
 ENV BUILD_VERSION=${BUILD_VERSION} \
 	PUBLIC_ASSET_BASE_URL=${PUBLIC_ASSET_BASE_URL}
 
+RUN chmod -R +x tools/ci afendor_app/scripts
+
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
 	--mount=type=cache,target=/usr/local/cargo/git \
 	cd afendor_app && pnpm build
