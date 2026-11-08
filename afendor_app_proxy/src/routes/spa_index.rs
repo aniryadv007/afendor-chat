@@ -27,7 +27,8 @@ const DEV_NO_STORE_CACHE_CONTROL: &str = "no-store, no-cache, must-revalidate, m
 const SHARED_SHELL_CACHE_CONTROL: &str = "public, max-age=0, s-maxage=1";
 const CSP_NONCE_PLACEHOLDER_ATTRIBUTE: &str = r#" nonce="{{CSP_NONCE_PLACEHOLDER}}""#;
 const MEDIA_PRECONNECT_TAG: &str = r#"<link rel="preconnect" href="{{MEDIA_ENDPOINT}}">"#;
-const SAME_ORIGIN_API_META_TAG: &str = r#"<meta name="afendor-api-origin" content="self">"#;
+const SAME_ORIGIN_API_META_TAG: &str = r#"<meta name="fluxer-api-origin" content="self">
+<meta name="afendor-api-origin" content="self">"#;
 const RELEASE_CHANNEL_META_NAME: &str = "afendor-release-channel";
 const HEAD_CLOSE_TAG: &str = "</head>";
 const TITLE_START: &str = "<title";

@@ -18,6 +18,7 @@ import {HttpStatus, MimeType} from '@fluxer/constants/src/HttpConstants';
 import type {LimitKey} from '@fluxer/constants/src/LimitConfigMetadata';
 import {InstanceEndpointKind, normalizeInstanceEndpoint} from '@fluxer/instance_bootstrap/src/EndpointNormalization';
 import {CanonicalNetworkProtocol} from '@fluxer/instance_bootstrap/src/NetworkOrigin';
+import {isOfficialInstanceHost} from '@fluxer/instance_bootstrap/src/OfficialInstance';
 import {
 	AGE_POLICY_ACTIONS,
 	CURRENT_INSTANCE_CODENAME,
@@ -439,7 +440,21 @@ export function requireDiscoveryDeclaresItsOwnOrigin(url: string, document: Inst
 		if (declared == null) {
 			continue;
 		}
-		if (originOfEndpoint(declared) !== servedBy) {
+		const declaredOrigin = originOfEndpoint(declared);
+		if (declaredOrigin !== servedBy) {
+			if (
+				isOfficialInstanceHost(servedBy) &&
+				declaredOrigin != null &&
+				isOfficialInstanceHost(declaredOrigin)
+			) {
+				continue;
+			}
+			if (
+				document.endpoints.webapp != null &&
+				originOfEndpoint(document.endpoints.webapp) === servedBy
+			) {
+				continue;
+			}
 			throw new InstanceDiscoveryOriginMismatchError(servedBy, declared);
 		}
 	}

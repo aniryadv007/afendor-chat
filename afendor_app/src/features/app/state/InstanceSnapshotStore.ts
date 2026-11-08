@@ -145,7 +145,8 @@ function bootstrapReleaseChannel(): OfficialReleaseChannel {
 	return Config.RELEASE_CHANNEL === 'stable' ? 'stable' : 'canary';
 }
 
-const SAME_ORIGIN_API_META_SELECTOR = 'meta[name="fluxer-api-origin"][content="self"]';
+const SAME_ORIGIN_API_META_SELECTOR =
+	'meta[name="fluxer-api-origin"][content="self"], meta[name="afendor-api-origin"][content="self"]';
 const SAME_ORIGIN_API_PATH = '/api';
 
 function browserDocumentOrigin(): string | null {
