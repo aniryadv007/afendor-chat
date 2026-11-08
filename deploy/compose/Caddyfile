@@ -31,16 +31,16 @@
 	# Gateway Real-time WebSocket
 	handle /gateway {
 		rewrite * /
-		import upstream gateway:8080
+		import upstream gateway:8771
 	}
 
 	handle_path /gateway/* {
-		import upstream gateway:8080
+		import upstream gateway:8771
 	}
 
 	# Media Proxy Attachments and Avatars
 	handle_path /media/* {
-		import upstream media-proxy:8080
+		import upstream media-proxy:8082
 	}
 
 	# WebRTC LiveKit Signaling
@@ -51,11 +51,11 @@
 	# Admin Dashboard
 	handle /admin {
 		rewrite * /
-		import upstream admin:8080
+		import upstream admin:3020
 	}
 
 	handle_path /admin/* {
-		import upstream admin:8080
+		import upstream admin:3020
 	}
 
 	# Well-Known Discovery Handlers
