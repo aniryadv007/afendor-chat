@@ -266,7 +266,7 @@ services:
     environment:
       AFENDOR_API_WORKER_MODE: all_lanes
       AFENDOR_API_WORKER_ENABLE_CRON_SCHEDULER: "true"
-    command: ["node", "dist/api/worker/WorkerMain.js"]
+    command: ["node", "dist/WorkerEntrypoint.js"]
     logging:
       driver: "json-file"
       options:
@@ -326,6 +326,8 @@ services:
         condition: service_healthy
     env_file:
       - ../../config/env/production.env
+    environment:
+      AFENDOR_STATIC_DIR: /srv/app/static
     logging:
       driver: "json-file"
       options:
