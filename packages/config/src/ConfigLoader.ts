@@ -517,7 +517,7 @@ function validatePostgresConfig(config: MasterConfig): void {
 			throw new Error('AFENDOR_POSTGRES_PASSWORD must not use the development default in production');
 		}
 	}
-	if (!postgres.ssl && !config.instance.self_hosted) {
+	if (!postgres.ssl && !config.instance.self_hosted && process.env.AFENDOR_POSTGRES_SSL !== 'false') {
 		throw new Error('AFENDOR_POSTGRES_SSL must be true in production');
 	}
 }
