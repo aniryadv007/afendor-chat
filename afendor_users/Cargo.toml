@@ -11,7 +11,7 @@ base64 = "0.23.1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 ciborium = "0.2.2"
 afendor_common = { path = "../afendor_common" }
-fluxer-svc = { path = "../afendor_svc" }
+afendor_svc = { package = "fluxer-svc", path = "../afendor_svc" }
 futures = "0.3.34"
 hmac = "0.13.0"
 moka = { version = "0.12.16", features = ["future"] }
@@ -26,4 +26,4 @@ x509-cert = { version = "0.2.5", default-features = false, features = ["std"] }
 
 [features]
 default = []
-scylla = ["dep:scylla", "fluxer-svc/scylla"]
+scylla = ["dep:scylla", "afendor_svc/scylla"]

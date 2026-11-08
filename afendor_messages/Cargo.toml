@@ -10,7 +10,7 @@ afendor_common = { path = "../afendor_common" }
 anyhow = "1.0.104"
 base64 = "0.23"
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
-fluxer-svc = { path = "../afendor_svc" }
+afendor_svc = { package = "fluxer-svc", path = "../afendor_svc" }
 fluxer_markdown_parser = { path = "../packages/markdown_parser/rust" }
 futures = "0.3.34"
 linkify = "0.11.0"
@@ -24,8 +24,8 @@ tracing = "0.1.44"
 url = "2.5.8"
 
 [dev-dependencies]
-fluxer-svc = { path = "../afendor_svc", features = ["mock"] }
+afendor_svc = { package = "fluxer-svc", path = "../afendor_svc", features = ["mock"] }
 
 [features]
 default = []
-scylla = ["dep:scylla", "fluxer-svc/scylla"]
+scylla = ["dep:scylla", "afendor_svc/scylla"]

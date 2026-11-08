@@ -13,7 +13,7 @@ base64 = "0.23.1"
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 encoding_rs = "0.8.44"
 entities = "1.0.1"
-fluxer-svc = { path = "../afendor_svc", default-features = false }
+afendor_svc = { package = "fluxer-svc", path = "../afendor_svc", default-features = false }
 hickory-resolver = { version = "0.26.3", default-features = false, features = ["tokio"] }
 infer = "0.22.0"
 moka = { version = "0.12.16", features = ["future", "sync"] }

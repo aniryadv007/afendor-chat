@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 anyhow = "1.0.104"
-fluxer-svc = { path = "../afendor_svc", default-features = false }
+afendor_svc = { package = "fluxer-svc", path = "../afendor_svc", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
 tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tracing = "0.1.44"
