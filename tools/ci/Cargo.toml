@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 
+[lib]
+name = "afendor_ci"
+path = "src/lib.rs"
+
+[[bin]]
+name = "afendor-ci"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0.104"
 aws-config = { version = "1.13.0", optional = true }
