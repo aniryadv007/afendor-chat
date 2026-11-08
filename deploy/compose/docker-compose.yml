@@ -91,6 +91,7 @@ services:
       --jetstream
       --store_dir=/data/jetstream
       --name=afendor-nats
+      -m 8222
     volumes:
       - nats-data:/data
     healthcheck:
@@ -195,7 +196,7 @@ services:
       - "${AFENDOR_LIVEKIT_TCP_PORT:-7881}:7881"
       - "${AFENDOR_LIVEKIT_UDP_PORT:-7882}:7882/udp"
     environment:
-      LIVEKIT_CONFIG: >
+      LIVEKIT_CONFIG: |
         port: 7880
         rtc:
           tcp_port: 7881
@@ -203,7 +204,7 @@ services:
           port_range_end: 7882
           use_external_ip: true
         keys:
-          ${AFENDOR_LIVEKIT_API_KEY}: ${AFENDOR_LIVEKIT_API_SECRET}
+          ${AFENDOR_LIVEKIT_API_KEY:-afendor_key}: ${AFENDOR_LIVEKIT_API_SECRET:-afendor_secret_123456789}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:7880/ >/dev/null"]
       interval: 10s
