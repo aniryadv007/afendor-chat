@@ -369,6 +369,7 @@ if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: activ
     ufw allow 7881/tcp comment "LiveKit WebRTC TCP Fallback" >/dev/null 2>&1 || true
     ufw allow 7882/udp comment "LiveKit WebRTC UDP Media" >/dev/null 2>&1 || true
     ufw allow 3478/udp comment "LiveKit WebRTC STUN/TURN" >/dev/null 2>&1 || true
+    ufw allow from 172.16.0.0/12 to any port 7880 proto tcp comment "Docker internal to LiveKit HTTP" >/dev/null 2>&1 || true
 fi
 
 # ------------------------------------------------------------------------------
