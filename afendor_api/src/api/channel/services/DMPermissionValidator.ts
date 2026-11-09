@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import Config from '@app/api/Config';
 import type {UserID} from '@app/api/BrandedTypes';
 import {SYSTEM_USER_ID} from '@app/api/constants/Core';
 import type {GuildRepository} from '@app/api/guild/repositories/GuildRepository';
@@ -54,6 +55,9 @@ export class DMPermissionValidator {
 			return;
 		}
 		if (areFriends) {
+			return;
+		}
+		if (Config.instance.selfHosted) {
 			return;
 		}
 		if (this.hasStaffDmAccess({senderUser, targetUser, senderSettings, targetSettings, senderId, recipientId})) {
