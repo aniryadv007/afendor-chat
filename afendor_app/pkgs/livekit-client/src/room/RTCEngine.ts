@@ -1125,21 +1125,9 @@ export default class RTCEngine extends (EventEmitter as new () => TypedEventEmit
 	}
 
 	private scheduleLostQualityReconnect() {
-		if (this.lostQualityTimeout) {
-			return;
-		}
-		this.lostQualityTimeout = CriticalTimers.setTimeout(() => {
-			this.lostQualityTimeout = undefined;
-			if (this._isClosed || this.pcState !== PCState.Connected || this.attemptingReconnect) {
-				return;
-			}
-			if (!this.hasActivePublisherSenders()) {
-				return;
-			}
-			this.log.warn('local connection quality lost while publishing, triggering full reconnect', this.logContext);
-			this.fullReconnectOnNext = true;
-			this.handleDisconnect('connection quality lost', ReconnectReason.RR_PUBLISHER_FAILED);
-		}, connectionQualityLostTimeout);
+		// Do not disconnect active PeerConnections due to quality telemetry (e.g. muted mic or mobile jitter).
+		// Real connection failures are handled by pcManager.onStateChange (PCTransportState.FAILED).
+		return;
 	}
 
 	private clearLostQualityTimeout() {

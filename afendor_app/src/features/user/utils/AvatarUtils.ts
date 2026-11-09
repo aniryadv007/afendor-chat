@@ -69,8 +69,7 @@ function brandingReplacesDefaultAvatars(snapshot: RuntimeConfigSnapshot): boolea
 }
 
 function usesNeutralDefaultAvatars(): boolean {
-	const snapshot = RuntimeConfig.getSnapshotOrNull();
-	return snapshot !== null && RuntimeConfig.isSelfHosted() && brandingReplacesDefaultAvatars(snapshot);
+	return true;
 }
 
 function pickDefaultAvatar(index: number, neutral: boolean): string {
