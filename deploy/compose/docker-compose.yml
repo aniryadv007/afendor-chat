@@ -171,15 +171,13 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AFENDOR_S3_SECRET_ACCESS_KEY:-afendor-secret}
       AWS_EC2_METADATA_DISABLED: "true"
     entrypoint: ["/bin/sh", "-c"]
-    command: >
-      "
+    command: |
       export ENDPOINT=http://seaweedfs:8333
       echo 'Initializing Afendor S3 buckets...'
       for bucket in ${AFENDOR_S3_BUCKET_CDN:-afendor} ${AFENDOR_S3_BUCKET_UPLOADS:-afendor-uploads} ${AFENDOR_S3_BUCKET_REPORTS:-afendor-reports} ${AFENDOR_S3_BUCKET_HARVESTS:-afendor-harvests}; do
         aws --endpoint-url=$$ENDPOINT s3 mb s3://$$bucket || true
       done
       echo 'Afendor S3 buckets ready.'
-      "
 
   # ----------------------------------------------------------------------------
   # 3. WEBRTC AUDIO / VIDEO RTC ENGINE (LIVEKIT)

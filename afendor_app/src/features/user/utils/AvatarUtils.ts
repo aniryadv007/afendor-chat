@@ -43,7 +43,14 @@ const getDefaultAvatarIndex = (id: string): number => Number(BigInt(id) % DEFAUL
 export const getDefaultAvatarPrimaryColor = (id: string): number =>
 	DEFAULT_AVATAR_PRIMARY_COLORS[getDefaultAvatarIndex(id)];
 
-const DEFAULT_AVATARS: ReadonlyArray<string> = [avatar0, avatar1, avatar2, avatar3, avatar4, avatar5];
+const DEFAULT_AVATARS: ReadonlyArray<string> = [
+	neutralAvatar0,
+	neutralAvatar1,
+	neutralAvatar2,
+	neutralAvatar3,
+	neutralAvatar4,
+	neutralAvatar5,
+];
 
 const NEUTRAL_DEFAULT_AVATARS: ReadonlyArray<string> = [
 	neutralAvatar0,
