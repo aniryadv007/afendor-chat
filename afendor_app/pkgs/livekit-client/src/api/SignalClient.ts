@@ -901,9 +901,14 @@ export class SignalClient {
 			if (this.onSubscriptionError) {
 				this.onSubscriptionError(msg.value);
 			}
-		} else if (msg.case === 'pong') {
-		} else if (msg.case === 'pongResp') {
-			this.rtt = Date.now() - Number.parseInt(msg.value.lastPingTimestamp.toString(), 10);
+		} else if (msg.case === 'pong' || msg.case === 'pongResp') {
+			const rawTimestamp = msg.case === 'pong' ? msg.value : msg.value?.lastPingTimestamp;
+			if (rawTimestamp !== undefined && rawTimestamp !== null) {
+				const ts = Number(rawTimestamp);
+				if (!Number.isNaN(ts) && ts > 0) {
+					this.rtt = Math.max(0, Date.now() - ts);
+				}
+			}
 			this.resetPingTimeout();
 			pingHandled = true;
 		} else if (msg.case === 'requestResponse') {
