@@ -361,6 +361,15 @@ check_host_port "8080" "Internal Ingress Multiplexer (Loopback)"
 check_host_port "7880" "Internal LiveKit WebRTC Signaling (Loopback)"
 check_host_port "7881" "LiveKit WebRTC TCP Fallback (Direct Host)"
 check_host_port "7882" "LiveKit WebRTC UDP Media Stream (Direct Host)"
+check_host_port "3478" "LiveKit WebRTC STUN/TURN (Direct Host)"
+
+# Automatically ensure UFW allows required WebRTC ports if UFW is enabled
+if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+    log_info "Configuring host firewall rules for WebRTC voice/video (ports 7881/tcp, 7882/udp, 3478/udp)..."
+    ufw allow 7881/tcp comment "LiveKit WebRTC TCP Fallback" >/dev/null 2>&1 || true
+    ufw allow 7882/udp comment "LiveKit WebRTC UDP Media" >/dev/null 2>&1 || true
+    ufw allow 3478/udp comment "LiveKit WebRTC STUN/TURN" >/dev/null 2>&1 || true
+fi
 
 # ------------------------------------------------------------------------------
 # STEP 4: USER-CONFIGURABLE DOMAIN SETTINGS (NOT HARDCODED)

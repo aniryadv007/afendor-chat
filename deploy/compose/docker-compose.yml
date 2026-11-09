@@ -189,10 +189,11 @@ services:
     networks:
       - afendor-net
     ports:
-      # RTC TCP fallback and UDP media ports bound to host
+      # RTC TCP fallback, UDP media ports, and STUN/TURN bound to host
       - "127.0.0.1:7880:7880"
       - "${AFENDOR_LIVEKIT_TCP_PORT:-7881}:7881"
       - "${AFENDOR_LIVEKIT_UDP_PORT:-7882}:7882/udp"
+      - "${AFENDOR_LIVEKIT_TURN_PORT:-3478}:3478/udp"
     environment:
       LIVEKIT_CONFIG: |
         port: 7880
@@ -201,8 +202,12 @@ services:
           udp_port: 7882
           use_external_ip: true
           stun_servers:
-            - stun.l.google.com:19302
-            - stun1.l.google.com:19302
+            - stun:stun.l.google.com:19302
+            - stun:stun1.l.google.com:19302
+        turn:
+          enabled: true
+          domain: ${AFENDOR_LIVEKIT_DOMAIN:-livekit.afendor.cc}
+          udp_port: 3478
         keys:
           ${AFENDOR_LIVEKIT_API_KEY:-afendor_key}: ${AFENDOR_LIVEKIT_API_SECRET:-afendor_secret_123456789}
     healthcheck:
