@@ -41,4 +41,4 @@ export const VOICE_CAMERA_USER_LIMIT_REACHED_DESCRIPTOR = msg({
 		'Error shown when enabling the camera is rejected because the channel already has the maximum number of users sharing video. {voiceChannelCameraUserLimit} is the configured cap.',
 });
 export const AFK_CHECK_INTERVAL_MS = 10000;
-export const DEFERRED_DISCONNECT_TIMEOUT_MS = 5000;
+export const DEFERRED_DISCONNECT_TIMEOUT_MS = 15000;

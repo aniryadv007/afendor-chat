@@ -186,17 +186,12 @@ services:
     image: livekit/livekit-server:v1.8.2
     container_name: afendor-livekit
     restart: unless-stopped
-    networks:
-      - afendor-net
-    ports:
-      # RTC TCP fallback, UDP media ports, and STUN/TURN bound to host
-      - "127.0.0.1:7880:7880"
-      - "${AFENDOR_LIVEKIT_TCP_PORT:-7881}:7881"
-      - "${AFENDOR_LIVEKIT_UDP_PORT:-7882}:7882/udp"
-      - "${AFENDOR_LIVEKIT_TURN_PORT:-3478}:3478/udp"
+    network_mode: host
     environment:
       LIVEKIT_CONFIG: |
         port: 7880
+        bind_addresses:
+          - ""
         rtc:
           tcp_port: 7881
           udp_port: 7882
@@ -233,6 +228,8 @@ services:
     restart: unless-stopped
     networks:
       - afendor-net
+    extra_hosts:
+      - "livekit:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -263,6 +260,8 @@ services:
     restart: unless-stopped
     networks:
       - afendor-net
+    extra_hosts:
+      - "livekit:host-gateway"
     depends_on:
       api:
         condition: service_healthy

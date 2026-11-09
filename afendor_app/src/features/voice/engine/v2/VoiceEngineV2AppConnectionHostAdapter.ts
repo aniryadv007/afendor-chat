@@ -68,7 +68,7 @@ import type {Subscription} from 'rxjs';
 import {timer} from 'rxjs';
 
 const logger = new Logger('VoiceEngineV2AppConnectionHostAdapter');
-const VOICE_SERVER_TIMEOUT_MS = 5000;
+const VOICE_SERVER_TIMEOUT_MS = 15000;
 const VIDEO_DECODER_EXCLUSION_TIMEOUT_MS = 500;
 
 export interface VoiceServerUpdateData {
