@@ -328,6 +328,9 @@ services:
       - ../../config/env/production.env
     environment:
       AFENDOR_STATIC_DIR: /srv/app/static
+    volumes:
+      - ./static/index.html:/srv/app/static/index.html:ro
+      - ./static/auth-index.html:/srv/app/static/auth-index.html:ro
     logging:
       driver: "json-file"
       options:
