@@ -209,7 +209,7 @@ services:
           domain: ${AFENDOR_LIVEKIT_DOMAIN:-livekit.afendor.cc}
           udp_port: 3478
         keys:
-          ${AFENDOR_LIVEKIT_API_KEY:-afendor_key}: ${AFENDOR_LIVEKIT_API_SECRET:-afendor_secret_123456789}
+          ${AFENDOR_LIVEKIT_API_KEY:-afendor_livekit_key}: ${AFENDOR_LIVEKIT_API_SECRET:-6442aae39e1e963ead46548873bd156a4f3a0ce7a51d8d06}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:7880/ >/dev/null"]
       interval: 10s
