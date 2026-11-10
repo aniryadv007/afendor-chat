@@ -700,12 +700,17 @@ export class VoiceEngineV2AppStatsHostAdapter extends Store {
 	private onLatencyTick(): void {
 		const timestamp = Date.now();
 		const engineWrap = this.room as RoomWithEngine;
-		if (!engineWrap?.engine?.client?.rtt) {
-			this.transitionStats({type: 'latency.gap', timestamp});
+		const rtt = engineWrap?.engine?.client?.rtt;
+		if (rtt && rtt > 0) {
+			this.transitionStats({type: 'latency.sample', timestamp, latency: Math.round(rtt)});
 			return;
 		}
-		const rtt = Math.round(engineWrap.engine.client.rtt);
-		this.transitionStats({type: 'latency.sample', timestamp, latency: rtt});
+		const estimated = this.estimatedLatency;
+		if (estimated !== null) {
+			this.transitionStats({type: 'latency.sample', timestamp, latency: estimated});
+			return;
+		}
+		this.transitionStats({type: 'latency.gap', timestamp});
 	}
 
 	startLatencyTracking(): void {

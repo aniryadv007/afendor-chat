@@ -24,7 +24,7 @@ export const DownloadButton = observer(() => {
 		return null;
 	}
 	const handleDownload = () => {
-		openExternalUrlWithWarning(DESKTOP_DOWNLOAD_URL);
+		window.location.href = DESKTOP_DOWNLOAD_URL;
 	};
 	const handleContextMenu = (e: React.MouseEvent) => {
 		e.preventDefault();

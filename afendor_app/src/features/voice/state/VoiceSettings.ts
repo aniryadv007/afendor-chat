@@ -460,7 +460,7 @@ class VoiceSettings {
 	showNonVideoParticipants = true;
 
 	showVoiceConnectionAvatarStack = true;
-	showVoiceConnectionIdPrefV2 = true;
+	showVoiceConnectionIdPrefV2 = false;
 	showConnectionVolumeControls = false;
 	pauseOwnScreenSharePreviewOnUnfocusPrefV2 = true;
 	disablePictureInPicturePopoutScreenShare = false;

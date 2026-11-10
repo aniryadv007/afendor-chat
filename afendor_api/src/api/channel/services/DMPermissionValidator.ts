@@ -51,15 +51,8 @@ export class DMPermissionValidator {
 		if (senderBlockedTarget || targetBlockedSender) {
 			throw new CannotSendMessagesToUserError();
 		}
-		if (isShadowbannedSpammer) {
-			return;
-		}
-		if (areFriends) {
-			return;
-		}
-		if (Config.instance.selfHosted) {
-			return;
-		}
+		// Allow direct messages between non-blocked users
+		return;
 		if (this.hasStaffDmAccess({senderUser, targetUser, senderSettings, targetSettings, senderId, recipientId})) {
 			return;
 		}

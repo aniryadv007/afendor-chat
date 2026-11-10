@@ -95,7 +95,16 @@ type SignalMessage = SignalRequest['message'];
 
 type SignalKind = NonNullable<SignalMessage>['case'];
 
-const passThroughQueueSignals: Array<SignalKind> = ['syncState', 'trickle', 'offer', 'answer', 'simulate', 'leave'];
+const passThroughQueueSignals: Array<SignalKind> = [
+	'syncState',
+	'trickle',
+	'offer',
+	'answer',
+	'simulate',
+	'leave',
+	'ping',
+	'pingReq',
+];
 
 function isRecoverableReconnectError(error: unknown): boolean {
 	if (error instanceof ConnectionError) {
@@ -292,7 +301,7 @@ export class SignalClient {
 		token: string,
 		opts: SignalOptions,
 		abortSignal?: AbortSignal,
-		useV0Path: boolean = false,
+		useV0Path: boolean = true,
 		publisherOffer?: SessionDescription,
 	): Promise<JoinResponse> {
 		if (this.lifecycleState === 'disconnecting') {
@@ -360,7 +369,7 @@ export class SignalClient {
 		token: string,
 		opts: ConnectOpts,
 		abortSignal?: AbortSignal,
-		useV0Path: boolean = false,
+		useV0Path: boolean = true,
 		publisherOffer?: SessionDescription,
 	): Promise<JoinResponse | ReconnectResponse | undefined> {
 		const unlock = await this.connectionLock.lock();
@@ -987,14 +996,18 @@ export class SignalClient {
 			this.log.warn('ping timeout duration not set');
 			return;
 		}
+		const timeoutMs = Math.max(
+			this.pingTimeoutDuration * 1000,
+			((this.pingIntervalDuration || 10) * 1000) + 15000,
+		);
 		this.pingTimeout = CriticalTimers.setTimeout(() => {
 			this.log.warn(
 				`ping timeout triggered. last pong received at: ${new Date(
-					Date.now() - this.pingTimeoutDuration! * 1000,
+					Date.now() - (this.pingTimeoutDuration || 15) * 1000,
 				).toUTCString()}`,
 			);
 			this.handleOnClose('ping timeout');
-		}, this.pingTimeoutDuration * 1000);
+		}, timeoutMs);
 	}
 
 	private clearPingTimeout() {
@@ -1011,8 +1024,9 @@ export class SignalClient {
 			return;
 		}
 		this.log.debug('start ping interval');
+		void this.sendPing();
 		this.pingInterval = CriticalTimers.setInterval(() => {
-			this.sendPing();
+			void this.sendPing();
 		}, this.pingIntervalDuration * 1000);
 	}
 

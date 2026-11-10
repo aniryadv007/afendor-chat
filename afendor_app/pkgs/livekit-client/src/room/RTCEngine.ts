@@ -313,7 +313,7 @@ export default class RTCEngine extends (EventEmitter as new () => TypedEventEmit
 		token: string,
 		opts: SignalOptions,
 		abortSignal?: AbortSignal,
-		useV0Path: boolean = false,
+		useV0Path: boolean = true,
 	): Promise<{joinResponse: JoinResponse; serverInfo: Partial<ServerInfo>}> {
 		this._isNewlyCreated = false;
 		this.url = url;

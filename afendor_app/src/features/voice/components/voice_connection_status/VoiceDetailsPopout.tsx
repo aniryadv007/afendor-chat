@@ -7,6 +7,8 @@ import * as PopoutCommands from '@app/features/ui/commands/PopoutCommands';
 import {Scroller} from '@app/features/ui/components/Scroller';
 import FocusRing from '@app/features/ui/focus_ring/FocusRing';
 import {Tooltip} from '@app/features/ui/tooltip/Tooltip';
+import {isDesktop} from '@app/features/ui/utils/NativeUtils';
+import VoiceSettings from '@app/features/voice/state/VoiceSettings';
 import styles from '@app/features/voice/components/VoiceConnectionStatus.module.css';
 import {EndpointCopyBadge} from '@app/features/voice/components/voice_connection_status/EndpointCopyBadge';
 import {
@@ -380,40 +382,44 @@ export const VoiceDetailsPopout = observer(({onClose, hideHeader = false}: Voice
 						title={i18n._(SESSION_DESCRIPTOR)}
 						data-flx="voice.voice-connection-status.voice-details-popout.popout-stats-section"
 					>
-						{connectionId && (
-							<PopoutStatRow
-								label={i18n._(DEVICE_DESCRIPTOR)}
-								value={
-									<Tooltip text={connectionId} data-flx="voice.voice-connection-status.voice-details-popout.tooltip">
-										<div
-											className={styles.deviceBadge}
-											data-flx="voice.voice-connection-status.voice-details-popout.device-badge"
-										>
-											{isMobile ? (
-												<DeviceMobileIcon
-													weight="regular"
-													className={styles.deviceIcon}
-													data-flx="voice.voice-connection-status.voice-details-popout.device-icon"
-												/>
-											) : (
-												<DesktopIcon
-													weight="regular"
-													className={styles.deviceIcon}
-													data-flx="voice.voice-connection-status.voice-details-popout.device-icon--2"
-												/>
-											)}
-											<span
-												className={styles.deviceBadgeText}
-												data-flx="voice.voice-connection-status.voice-details-popout.device-badge-text"
+						{connectionId && (() => {
+							const deviceName = isMobile ? 'Mobile' : isDesktop() ? 'Desktop App' : 'Web Browser';
+							const deviceText = VoiceSettings.showVoiceConnectionId ? `${deviceName} (${connectionId})` : deviceName;
+							return (
+								<PopoutStatRow
+									label={i18n._(DEVICE_DESCRIPTOR)}
+									value={
+										<Tooltip text={connectionId ? `${deviceName} • ${connectionId}` : deviceName} data-flx="voice.voice-connection-status.voice-details-popout.tooltip">
+											<div
+												className={styles.deviceBadge}
+												data-flx="voice.voice-connection-status.voice-details-popout.device-badge"
 											>
-												{connectionId}
-											</span>
-										</div>
-									</Tooltip>
-								}
-								data-flx="voice.voice-connection-status.voice-details-popout.popout-stat-row"
-							/>
-						)}
+												{isMobile ? (
+													<DeviceMobileIcon
+														weight="regular"
+														className={styles.deviceIcon}
+														data-flx="voice.voice-connection-status.voice-details-popout.device-icon"
+													/>
+												) : (
+													<DesktopIcon
+														weight="regular"
+														className={styles.deviceIcon}
+														data-flx="voice.voice-connection-status.voice-details-popout.device-icon--2"
+													/>
+												)}
+												<span
+													className={styles.deviceBadgeText}
+													data-flx="voice.voice-connection-status.voice-details-popout.device-badge-text"
+												>
+													{deviceText}
+												</span>
+											</div>
+										</Tooltip>
+									}
+									data-flx="voice.voice-connection-status.voice-details-popout.popout-stat-row"
+								/>
+							);
+						})()}
 						<PopoutStatRow
 							label={i18n._(CURRENT_PING_DESCRIPTOR)}
 							value={latency !== null ? formatMilliseconds(latency, locale) : i18n._(MEASURING_DESCRIPTOR)}

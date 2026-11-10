@@ -29,15 +29,15 @@ export function getTwemojiURL(codePoints: string): string | null {
 		return null;
 	}
 	const origin = getStaticOrigin();
-	if (origin == null) {
-		return null;
-	}
-	const key = `${origin}:${codePoints}`;
+	const baseOrigin = origin ?? 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets';
+	const key = `${baseOrigin}:${codePoints}`;
 	const cached = TWEMOJI_URL_CACHE.get(key);
 	if (cached !== undefined) {
 		return cached;
 	}
-	const url = `${origin}/emoji/${codePoints}.svg?v=${TWEMOJI_VERSION}`;
+	const url = origin
+		? `${origin}/emoji/${codePoints}.svg?v=${TWEMOJI_VERSION}`
+		: `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/${codePoints.toLowerCase()}.svg`;
 	if (TWEMOJI_URL_CACHE.size >= TWEMOJI_URL_CACHE_LIMIT) {
 		const oldest = TWEMOJI_URL_CACHE.keys().next();
 		if (!oldest.done) {

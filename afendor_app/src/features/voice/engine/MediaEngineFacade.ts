@@ -704,7 +704,7 @@ class MediaEngineFacade extends Store {
 	}
 
 	get currentLatency(): number | null {
-		return this.statsHostAdapter.currentLatency;
+		return this.statsHostAdapter.displayLatency ?? this.statsHostAdapter.currentLatency;
 	}
 
 	get averageLatency(): number | null {
