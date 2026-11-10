@@ -70,7 +70,7 @@ server {
 
     # Desktop download redirect
     location = /download {
-        return 302 https://cdn.{{DOMAIN}}/desktop/Afendor-Chat-Windows.zip;
+        return 302 https://deskapp.{{DOMAIN}}/;
     }
 
     # Redirect all user web traffic to web.{{DOMAIN}}
@@ -132,7 +132,7 @@ server {
 
     # Desktop download redirect
     location = /download {
-        return 302 https://cdn.{{DOMAIN}}/desktop/Afendor-Chat-Windows.zip;
+        return 302 https://deskapp.{{DOMAIN}}/;
     }
 
     # Internal Edge Ingress Dispatcher
